@@ -2,8 +2,8 @@
 // The channel adapter normalizes inbound to one internal shape so swapping to WhatsApp is config.
 
 import TelegramBot from "node-telegram-bot-api";
-import { runLead } from "./agent.js";
-import { upsertLead } from "./store.js";
+import { runLead } from "./agent";
+import { upsertLead } from "./store";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {

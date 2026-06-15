@@ -2,10 +2,10 @@
 // Plain async functions = the real business logic (fully testable, no key needed).
 // agent.ts registers these with the Claude Agent SDK as MCP tools behind canUseTool.
 
-import { quoteRange, type PricingCase } from "./pricing.js";
-import { geoQualify, scoreLead, type LeadSignals } from "./qualify.js";
-import { checkEscalation, hardRuleDeny, type CaseState } from "./escalation.js";
-import { upsertLead, getLead, actionSeen, type Lead } from "./store.js";
+import { quoteRange, type PricingCase } from "./pricing";
+import { geoQualify, scoreLead, type LeadSignals } from "./qualify";
+import { checkEscalation, hardRuleDeny, type CaseState } from "./escalation";
+import { upsertLead, getLead, actionSeen, type Lead } from "./store";
 
 export interface YardAssessment {
   condition_score: number;

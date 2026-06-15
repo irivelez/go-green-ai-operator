@@ -1,11 +1,14 @@
-// Record store — Airtable stand-in for the live demo (spec §16).
-// JSON-file persistence with idempotent action keys (§5). Swap to Airtable post-event.
+// Record store (spec §16). Pluggable backend, same public API as before:
+//   - memory (DEFAULT) : serverless-safe, seeded from seed.ts. Used by the Vercel dashboard.
+//   - json   : local file persistence for the long-running Telegram/Agent-SDK runtime.
+//              enabled by STORE_BACKEND=json or LEADS_DB_PATH.
+// Airtable is the production swap (spec §4.1) — kept as a documented adapter, not on the
+// serverless hot path. Idempotent action keys (§5) enforced here via (lead_id, action_hash).
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createHash } from "node:crypto";
-
-const DB_PATH = process.env.LEADS_DB_PATH ?? "data/leads.json";
+import { SEED_LEADS } from "./seed";
 
 export type LeadStatus =
   | "New Lead" | "Waiting for Info" | "Info Received" | "AI Qualified"
@@ -40,16 +43,52 @@ export interface Lead {
 
 interface DB { leads: Record<string, Lead>; }
 
-function load(): DB {
-  if (!existsSync(DB_PATH)) return { leads: {} };
-  return JSON.parse(readFileSync(DB_PATH, "utf8"));
-}
-function save(db: DB) {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+interface Backend {
+  load(): DB;
+  save(db: DB): void;
 }
 
-export function upsertLead(fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }): Lead {
+class MemoryBackend implements Backend {
+  private db: DB;
+  constructor(seed: Lead[] = []) {
+    this.db = { leads: {} };
+    for (const l of seed) this.db.leads[l.lead_id] = structuredClone(l);
+  }
+  load(): DB { return this.db; }
+  save(db: DB): void { this.db = db; }
+}
+
+class JsonBackend implements Backend {
+  constructor(private path: string) {}
+  load(): DB {
+    if (!existsSync(this.path)) return { leads: {} };
+    return JSON.parse(readFileSync(this.path, "utf8")) as DB;
+  }
+  save(db: DB): void {
+    mkdirSync(dirname(this.path), { recursive: true });
+    writeFileSync(this.path, JSON.stringify(db, null, 2));
+  }
+}
+
+function pickBackend(): Backend {
+  const mode = process.env.STORE_BACKEND ?? (process.env.LEADS_DB_PATH ? "json" : "memory");
+  if (mode === "json") return new JsonBackend(process.env.LEADS_DB_PATH ?? "data/leads.json");
+  return new MemoryBackend(SEED_LEADS);
+}
+
+let backend: Backend = pickBackend();
+
+// Test/seed hook — start from a clean, explicit dataset (hermetic tests).
+export function resetStore(seed: Lead[] = []): void {
+  backend = new MemoryBackend(seed);
+}
+
+function load(): DB { return backend.load(); }
+function save(db: DB): void { backend.save(db); }
+
+export function upsertLead(
+  fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }
+): Lead {
   const db = load();
   const existing = db.leads[fields.lead_id];
   const lead: Lead = {

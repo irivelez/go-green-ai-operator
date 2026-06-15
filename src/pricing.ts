@@ -1,6 +1,17 @@
 // Pricing engine — deterministic, range-only (spec §9.1 / §9.2).
 // Pure function. NEVER an LLM guess. Anything outside coverage → escalate (no autonomous range).
 
+import {
+  PRICE_BOOK,
+  FREQUENCY_MULTIPLIER,
+  monthlyFromVisit,
+  addOnById,
+  type Tier as CartTier,
+  type Frequency as CartFrequency,
+  type PricingResult,
+  type PricingLineItem,
+} from "./contract";
+
 export type YardSize = "small" | "medium" | "large";
 export type Frequency = "weekly" | "biweekly" | "monthly";
 export type PackageTier = "essential" | "signature" | "premium";
@@ -98,4 +109,66 @@ export function quoteRange(c: PricingCase): PriceRange {
   const confidence = c.cleanup_required === undefined ? 0.7 : 0.85;
 
   return { low, high, currency: "USD", assumptions, confidence, covered: true };
+}
+
+// Cart pricing — pure (tier, frequency, add-ons) → PricingResult.
+// Authority: BUILD-DECISIONS §A3 (subscription math), §3 (add-on classification).
+
+export function priceCart(input: {
+  tier: CartTier;
+  frequency: CartFrequency;
+  addOnIds: string[];
+}): PricingResult {
+  const { tier, frequency, addOnIds } = input;
+
+  const perVisit = PRICE_BOOK[tier].perVisit;
+  const monthlyRecurring = monthlyFromVisit(tier, frequency);
+
+  const fixedAddOnLineItems: PricingLineItem[] = [];
+  const openEndedFlagged: PricingResult["openEndedFlagged"] = [];
+
+  for (const id of addOnIds) {
+    const addOn = addOnById(id);
+    if (!addOn) throw new Error(`unknown add-on: ${id}`);
+    if (addOn.kind === "fixed") {
+      fixedAddOnLineItems.push({
+        addOnId: addOn.id,
+        name: addOn.name,
+        amount: addOn.priceStartingAt,
+        unit: addOn.unit,
+      });
+    } else {
+      openEndedFlagged.push({
+        addOnId: addOn.id,
+        name: addOn.name,
+        reason: addOn.openEndedReason ?? "requires on-site quote",
+      });
+    }
+  }
+
+  const fixedSum = fixedAddOnLineItems.reduce((s, x) => s + x.amount, 0);
+  const firstChargeTotal = Math.round((monthlyRecurring + fixedSum) * 100) / 100;
+
+  const assumptions: string[] = [
+    `${PRICE_BOOK[tier].name}: flat $${perVisit}/visit (productized, on-site review for final price)`,
+    `monthly = per-visit × ${FREQUENCY_MULTIPLIER[frequency]} (${frequency} frequency)`,
+  ];
+  if (openEndedFlagged.length > 0) {
+    assumptions.push(
+      `${openEndedFlagged.length} item${openEndedFlagged.length === 1 ? "" : "s"} need a human estimate — not charged now`,
+    );
+  }
+
+  return {
+    tier,
+    frequency,
+    perVisit,
+    monthlyRecurring,
+    fixedAddOnLineItems,
+    openEndedFlagged,
+    firstChargeTotal,
+    recurringMonthly: monthlyRecurring,
+    currency: "USD",
+    assumptions,
+  };
 }

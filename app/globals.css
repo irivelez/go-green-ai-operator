@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@theme {
+  --color-moss-50: #f3f7f0;
+  --color-moss-100: #e3ecdd;
+  --color-moss-200: #c7d9bc;
+  --color-moss-300: #a3c191;
+  --color-moss-400: #7da568;
+  --color-moss-500: #5d8a49;
+  --color-moss-600: #466e37;
+  --color-moss-700: #37562c;
+  --color-moss-800: #2d4525;
+  --color-moss-900: #263a20;
+  --color-bark-900: #1a1f17;
+
+  --font-display: var(--font-fraunces), ui-serif, "Iowan Old Style", "Apple Garamond", Baskerville, Georgia, serif;
+  --font-sans: var(--font-manrope), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+
+  --shadow-petal: 0 1px 2px 0 rgb(38 58 32 / 0.04), 0 8px 24px -12px rgb(38 58 32 / 0.12);
+  --shadow-petal-lg: 0 2px 4px 0 rgb(38 58 32 / 0.05), 0 24px 48px -24px rgb(38 58 32 / 0.18);
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Subtle paper-grain texture for premium feel */
+.bg-paper {
+  background-color: #f7faf4;
+  background-image:
+    radial-gradient(rgb(70 110 55 / 0.04) 1px, transparent 1px),
+    radial-gradient(rgb(70 110 55 / 0.03) 1px, transparent 1px);
+  background-size: 24px 24px, 16px 16px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Soft moss mesh background for hero/header */
+.bg-moss-mesh {
+  background-color: #f3f7f0;
+  background-image:
+    radial-gradient(at 8% 0%, rgb(125 165 104 / 0.18) 0px, transparent 50%),
+    radial-gradient(at 92% 10%, rgb(70 110 55 / 0.12) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, rgb(199 217 188 / 0.40) 0px, transparent 50%);
+}
+
+/* Tiny pulsing dot for "live" indicator */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgb(93 138 73 / 0.55); }
+  70% { box-shadow: 0 0 0 8px rgb(93 138 73 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(93 138 73 / 0); }
+}
+.dot-live {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Staggered fade-in for page-load reveal */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-in {
+  animation: rise-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Subtle thinking shimmer for operator bubble */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgb(125 165 104 / 0.15), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Native-feel scrollbar for the pipeline rail */
+.rail {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(163 193 145 / 0.6) transparent;
+}
+.rail::-webkit-scrollbar { height: 8px; }
+.rail::-webkit-scrollbar-track { background: transparent; }
+.rail::-webkit-scrollbar-thumb {
+  background: rgb(163 193 145 / 0.6);
+  border-radius: 999px;
+}
+
+/* Hairline divider with botanical accent */
+.hairline {
+  background: linear-gradient(90deg, transparent, rgb(70 110 55 / 0.25), transparent);
+  height: 1px;
+}

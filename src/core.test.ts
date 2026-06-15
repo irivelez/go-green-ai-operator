@@ -2,11 +2,14 @@
 // This is the 30-minute demo of correctness: intake→qualify→price→book + escalation + hard rules.
 // Run: npx tsx src/core.test.ts
 
-import { upsertLead } from "./store.js";
+import { upsertLead, resetStore } from "./store";
 import {
   tool_score_lead, tool_quote_range, tool_book_evaluation,
   tool_create_work_order, tool_raise_escalation, checkEscalation, visionFallback,
-} from "./tools.js";
+} from "./tools";
+
+// Hermetic: start from a clean store every run (no cross-run state bleed).
+resetStore([]);
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {

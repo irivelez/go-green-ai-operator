@@ -4,13 +4,15 @@ Autonomous maintenance funnel for premium SF landscaping. Telegram intake → vi
 
 **Built for [BuilderShip Yacht Hackathon](https://luma.com/ship.builders) — Deltanova design-partner build with [Go Green Landscape](https://gogreenlandscape.com).**
 
-## What it does
+## Two surfaces (one shared brain)
 
-- **Channel**: Telegram bot (live). WhatsApp-ready via config swap.
-- **Brain**: Claude Agent SDK `query()` loop. `canUseTool` is the escalation gate.
-- **Vision**: Native — qualifies yard photos in-thread.
+The Claude Agent SDK spawns a `claude` CLI subprocess and needs a writable filesystem, so it **can't run on Vercel serverless**. The build splits over one shared domain core (`src/`):
+
+1. **Live dashboard + serverless Operator** — Next.js on Vercel (the live URL). Runs the **deterministic** engine (qualify → price → escalate → book) in API routes, so it's fully functional with **zero keys**. Claude phrases the replies via the Anthropic **Messages API** when `ANTHROPIC_API_KEY` is set. Telegram channel lives here too (`/api/telegram/webhook`).
+2. **Agent SDK runtime** — the long-running Telegram brain (`src/agent.ts` + `src/index.ts`): `query()` loop, in-process MCP tools, `canUseTool` as the escalation gate. Run with `npm run agent` on any host that has a key.
+
 - **Pricing**: Deterministic TS function, **range-only**. Never an LLM guess.
-- **Record**: Airtable in prod, JSON stand-in for demo.
+- **Record**: Pluggable store — in-memory (seeded, serverless) · JSON (local) · Airtable (prod swap).
 
 ## Hard invariants (enforced in code, not just prompt)
 
@@ -27,13 +29,20 @@ Professional, warm, premium, honest. Mirrors EN/ES. Never "cheap", never a final
 ## Run
 
 ```bash
-# Prove the spine — no keys needed
 npm i
-npm run test:core
 
-# Live
-cp .env.example .env  # add ANTHROPIC_API_KEY + TELEGRAM_BOT_TOKEN
+# Prove the spine — no keys needed (intake → qualify → price → book + escalation)
+npm test
+
+# Dashboard + Operator console → http://localhost:3000 (works with zero keys)
 npm run dev
+
+# Deploy the live URL
+vercel --prod
+
+# Optional: full Claude replies + live Telegram
+cp .env.example .env   # add ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN
+npm run agent          # long-running Agent SDK Telegram runtime (needs a host + key)
 ```
 
 ## Spec

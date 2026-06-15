@@ -161,10 +161,21 @@ export async function analyzeYardPhotos(urls: string[]): Promise<VisionAssessmen
   const client = new Anthropic();
   const model = getVisionModel();
 
-  const imageBlocks = urls.map((url) => ({
-    type: "image" as const,
-    source: { type: "url" as const, url },
-  }));
+  const imageBlocks = urls.map((url) => {
+    // data:<mediaType>;base64,<data> → base64 source; otherwise a remote URL.
+    const m = url.match(/^data:([^;]+);base64,(.+)$/s);
+    if (m) {
+      return {
+        type: "image" as const,
+        source: {
+          type: "base64" as const,
+          media_type: m[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+          data: m[2]!,
+        },
+      };
+    }
+    return { type: "image" as const, source: { type: "url" as const, url } };
+  });
 
   const userContent: Anthropic.ContentBlockParam[] = [
     ...imageBlocks,

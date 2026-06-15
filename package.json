@@ -7,18 +7,23 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "agent": "tsx watch src/index.ts",
+    "agent": "STORE_BACKEND=json tsx watch src/index.ts",
     "test:core": "tsx src/core.test.ts",
+    "test:operator": "tsx src/operator.test.ts",
+    "test:agent": "tsx src/agent.test.ts",
+    "test": "tsx src/core.test.ts && tsx src/operator.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/react": "^1.2.12",
     "@anthropic-ai/sdk": "^0.39.0",
+    "ai": "^4.3.19",
     "airtable": "^0.12.2",
     "lucide-react": "^0.469.0",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "stripe": "^22.2.1",
+    "stripe": "^17.7.0",
     "zod": "^3.24.1"
   },
   "optionalDependencies": {
