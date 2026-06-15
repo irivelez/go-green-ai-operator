@@ -29,13 +29,41 @@ export function ChatPanel({
     id: `funnel-${funnelState.language}`,
     api: "/api/funnel/agent",
     streamProtocol: "data",
-    body: {
-      funnelState: {
-        language: funnelState.language,
-        step: funnelState.step,
-      },
-    },
   });
+
+  // Thread the customer's LIVE situation into every send so the concierge is
+  // genuinely context-aware (intent, plan, price, photos) — not a blind chatbot.
+  const submitWithContext = (e: React.FormEvent<HTMLFormElement>) => {
+    const p = funnelState.pricingResult;
+    const v = funnelState.visionAssessment;
+    handleSubmit(e, {
+      body: {
+        funnelState: {
+          language: funnelState.language,
+          step: funnelState.step,
+          intent: funnelState.intent,
+          address: funnelState.address ?? funnelState.identity?.address,
+          tier: funnelState.confirmedTier ?? funnelState.recommendedTier,
+          frequency: funnelState.frequency,
+          pricing: p
+            ? {
+                perVisit: p.perVisit,
+                monthlyRecurring: p.monthlyRecurring,
+                firstChargeTotal: p.firstChargeTotal,
+                currency: p.currency,
+              }
+            : undefined,
+          vision: v
+            ? {
+                recommended_tier: v.recommended_tier,
+                condition_score: v.condition_score,
+                cleanup_required: v.cleanup_required,
+              }
+            : undefined,
+        },
+      },
+    });
+  };
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -116,7 +144,7 @@ export function ChatPanel({
       </div>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={submitWithContext}
         className="border-t border-moss-100 bg-white p-3 flex items-end gap-2"
       >
         <textarea

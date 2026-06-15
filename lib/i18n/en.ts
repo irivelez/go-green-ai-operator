@@ -198,13 +198,13 @@ export const en = {
       sentSubtitle: "We'll reach out the moment a slot opens up.",
     },
     chat: {
-      openCta: "Ask a question",
-      title: "Ask us anything",
-      subtitle: "We're here while you decide. One quick answer at a time.",
-      placeholder: "Type a question…",
+      openCta: "Questions? Ask the concierge",
+      title: "Your garden concierge",
+      subtitle: "Fill out the form to book — ask me anything along the way.",
+      placeholder: "Ask about plans, pricing, or your visit…",
       sending: "Thinking…",
       emptyStateGreeting:
-        "Hi — I'm here if you'd like a hand. Ask about plans, pricing, or what to expect.",
+        "Hi — the form on the left books your service. I'm here for any questions: plans, pricing, photos, or what to expect.",
       closeCta: "Close",
     },
   },

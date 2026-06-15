@@ -204,13 +204,13 @@ export const es: Dict = {
       sentSubtitle: "Te contactamos en cuanto se libere un espacio.",
     },
     chat: {
-      openCta: "Hacer una pregunta",
-      title: "Pregúntanos lo que sea",
-      subtitle: "Estamos aquí mientras decides. Una respuesta a la vez.",
-      placeholder: "Escribe una pregunta…",
+      openCta: "¿Dudas? Pregunta al concierge",
+      title: "Tu concierge de jardín",
+      subtitle: "Completa el formulario para reservar — pregúntame lo que sea en el camino.",
+      placeholder: "Pregunta sobre planes, precios o tu visita…",
       sending: "Pensando…",
       emptyStateGreeting:
-        "Hola — estoy aquí si te puedo ayudar. Pregúntame sobre planes, precios o qué esperar.",
+        "Hola — el formulario de la izquierda reserva tu servicio. Estoy aquí para tus dudas: planes, precios, fotos o qué esperar.",
       closeCta: "Cerrar",
     },
   },

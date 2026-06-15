@@ -6,6 +6,7 @@ import { quoteRange, type PricingCase } from "./pricing";
 import { geoQualify, scoreLead, type LeadSignals } from "./qualify";
 import { checkEscalation, hardRuleDeny, type CaseState } from "./escalation";
 import { upsertLead, getLead, actionSeen, type Lead } from "./store";
+import { notifyOwnerEscalation } from "./notify";
 
 export interface YardAssessment {
   condition_score: number;
@@ -67,10 +68,14 @@ export function tool_create_work_order(lead_id: string): Lead | { error: string 
 }
 
 export function tool_raise_escalation(lead_id: string, channel: Lead["channel"], reason: string, brief: string): Lead {
-  return upsertLead({
+  const lead = upsertLead({
     lead_id, channel, status: "Needs Human Review",
     escalation_reason: reason, internal_notes: brief,
   });
+  // Fire-and-forget owner alert via Composio → Gmail. Never blocks or throws into the flow;
+  // no-op when unconfigured (tests + zero-key demo stay green).
+  void notifyOwnerEscalation({ lead_id, channel, reason, brief });
+  return lead;
 }
 
 export { checkEscalation };
