@@ -146,8 +146,8 @@ export const en = {
       title: "Secure checkout",
       subtitle:
         "We use Stripe to handle payment safely. You won't be charged until you confirm.",
-      mockBadge: "Mock checkout — replaces Stripe in this preview",
-      simulateCta: "Simulate successful payment",
+      mockBadge: "Stripe · test mode",
+      simulateCta: "Pay & continue",
       cancelCta: "Back to quote",
       processing: "Connecting to Stripe…",
     },

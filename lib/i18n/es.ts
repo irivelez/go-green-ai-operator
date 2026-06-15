@@ -151,8 +151,8 @@ export const es: Dict = {
       title: "Pago seguro",
       subtitle:
         "Usamos Stripe para procesar el pago de forma segura. No se cobra nada hasta que confirmes.",
-      mockBadge: "Pago simulado — reemplaza a Stripe en esta vista previa",
-      simulateCta: "Simular pago exitoso",
+      mockBadge: "Stripe · modo de prueba",
+      simulateCta: "Pagar y continuar",
       cancelCta: "Volver a la cotización",
       processing: "Conectando con Stripe…",
     },
