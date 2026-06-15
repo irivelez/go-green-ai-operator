@@ -15,6 +15,18 @@ The Claude Agent SDK spawns a `claude` CLI subprocess + needs a writable FS → 
 - **Pricing**: deterministic TS, range-only, `src/pricing.ts`. NEVER an LLM guess.
 - **Store**: pluggable `src/store.ts` — memory (default, serverless, seeded `src/seed.ts`) | json (local) | Airtable (prod swap).
 
+## Primary surface (NEW — the LLM-driven funnel)
+`/agent` (`app/agent/*`) is the chat-first booking experience and the one to demo. ONE agent
+drives the whole flow by **calling tools**; each tool result renders as an interactive React
+component (generative UI), and the deterministic engine re-derives every number server-side.
+
+- **Brain**: [`app/api/funnel/agent/route.ts`](./app/api/funnel/agent/route.ts) — Vercel AI SDK v4 `streamText` + tools + `maxSteps` (multi-step server-side tool loop) over `@ai-sdk/anthropic`. **Requires `ANTHROPIC_API_KEY` in production** (returns 503, no silent keyword fallback); dev with no key streams an honest preview message.
+- **Tools**: [`src/agent-tools.ts`](./src/agent-tools.ts) wraps the engine — `qualify_lead · analyze_photos · recommend_tier · compute_pricing · propose_checkout · offer_slots · confirm_booking · raise_escalation`. The LLM proposes; the tool's `execute` disposes. **The LLM never charges Stripe** — `propose_checkout` only stages a Checkout URL the human clicks; `confirm_booking` refuses until the lead is paid.
+- **UI**: [`GenerativeChat.tsx`](./app/agent/components/GenerativeChat.tsx) (`useChat` + tool-invocation dispatch) + [`cards.tsx`](./app/agent/components/cards.tsx) (tier options, quote, checkout, slot picker, confirmation, escalation, reasoning-trace chip).
+- **Tests**: `tsx src/agent-tools.test.ts` (29 cases, no keys) · `tsx src/agent-route.test.ts` (prod guard) · `npm run eval` (real-model scenario evals; skips without a key).
+
+The older `app/page.tsx` dashboard + deterministic `/api/operator` (LLM only phrased a pre-made decision) remain for the human review/KPI view. The `@anthropic-ai/claude-agent-sdk` dependency is dropped — it's serverless-hostile and was never load-bearing here.
+
 ## Hard rules (invariants — enforced in code, not just prompt)
 - No scheduling without a confirmed **address**.
 - **Range-only** pricing autonomously — final price needs on-site review.
