@@ -14,9 +14,13 @@ import {
   runOfferSlots,
   runConfirmBooking,
   runRaiseEscalation,
+  runValidateAddress,
+  runConfirmArea,
+  runComputeExactPrice,
   type ToolContext,
 } from "./agent-tools";
 import { PRICE_BOOK, monthlyFromVisit } from "./contract";
+import { pricePerVisit } from "./pricing";
 import { resetStore, upsertLead, getLead } from "./store";
 import { resetSlots } from "./scheduler";
 
@@ -28,6 +32,8 @@ const ok = (name: string, cond: boolean, detail = "") => {
 };
 const approxEq = (a: number, b: number, eps = 0.005) => Math.abs(a - b) < eps;
 const ctx = (leadId: string): ToolContext => ({ leadId, language: "en" });
+
+async function main() {
 
 console.log("\n=== S1: qualify_lead — geo + score (in-area A vs out-of-area C) ===");
 {
@@ -163,5 +169,122 @@ console.log("\n=== raise_escalation — marks lead, blocks auto-charge ===");
   ok("lead status → Needs Human Review", getLead("L6")?.status === "Needs Human Review", getLead("L6")?.status);
 }
 
+console.log("\n=== T10.a: validate_address — no Google key → graceful error, never throws ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7", channel: "form" });
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  let threw = false;
+  let result: Awaited<ReturnType<typeof runValidateAddress>> | undefined;
+  try {
+    result = await runValidateAddress(ctx("L7"), {
+      addressLines: ["123 Main St"],
+      locality: "San Francisco",
+      adminArea: "CA",
+      postalCode: "94110",
+    });
+  } catch {
+    threw = true;
+  }
+  ok("no_key → did not throw", !threw);
+  ok("no_key → status 'error' (graceful)", result?.status === "error", JSON.stringify(result));
+  ok("no_key → reason surfaced", typeof (result as { reason?: string })?.reason === "string");
+}
+
+console.log("\n=== T10.b: confirm_area — re-derives sqft from path; client-supplied number ignored ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L8", channel: "form" });
+  // ~50m × 100m rectangle anchored near SF (T7 ref): ≈ 53820 sqft from computePolygonSqft.
+  const path = [
+    { lat: 37.75,             lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 + 0.001136 },
+    { lat: 37.75,             lng: -122.42 + 0.001136 },
+  ];
+  const r = runConfirmArea(ctx("L8"), { path });
+  ok("re-derived confirmed_sqft ≈ 53820 (±200)", Math.abs(r.confirmed_sqft - 53820) < 200, `got ${r.confirmed_sqft}`);
+  ok("area_confirmed_by_customer true on lead", getLead("L8")?.area_confirmed_by_customer === true);
+  ok("4-corner rect → area_source 'auto'", r.area_source === "auto", `got ${r.area_source}`);
+  // Even if a malicious LLM crammed in a different number, the path's own area math wins.
+  // We don't expose a "claimed sqft" input — there's literally nowhere to inject one.
+}
+
+console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises tier flat→moderate ===");
+{
+  resetStore([]);
+  upsertLead({
+    lead_id: "L9",
+    channel: "form",
+    slope_tier: "flat",
+    slope_source: "elevation",
+    vision_assessment: { slope_signals: { steepness_hint: "steep" } },
+  });
+  const path = [
+    { lat: 37.75,             lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 + 0.001136 },
+    { lat: 37.75,             lng: -122.42 + 0.001136 },
+  ];
+  const r = runConfirmArea(ctx("L9"), { path });
+  ok("slope_tier raised flat → moderate", r.slope_tier === "moderate", `got ${r.slope_tier}`);
+  ok("slope_source 'photo_raised'", r.slope_source === "photo_raised", `got ${r.slope_source}`);
+  ok("persisted to lead", getLead("L9")?.slope_tier === "moderate" && getLead("L9")?.slope_source === "photo_raised");
+}
+
+console.log("\n=== T10.d: compute_exact_price — missing confirmed_sqft → structured refusal ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L10", channel: "form" }); // no confirmed_sqft
+  const r = runComputeExactPrice(ctx("L10"), { tier: "signature", frequency: "biweekly" });
+  ok("status 'missing_measurement'", r.status === "missing_measurement", JSON.stringify(r));
+  ok("message present", typeof (r as { message?: string }).message === "string" && (r as { message: string }).message.length > 0);
+}
+
+console.log("\n=== T10.e: compute_exact_price — 2500 sqft + flat + biweekly matches pricePerVisit ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L11", channel: "form", confirmed_sqft: 2500, slope_tier: "flat" });
+  const r = runComputeExactPrice(ctx("L11"), { tier: "signature", frequency: "biweekly" });
+  const expected = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "flat", frequency: "biweekly" });
+  ok("status 'priced'", r.status === "priced", JSON.stringify(r));
+  if (r.status === "priced") {
+    ok("perVisit matches engine", r.perVisit === expected.perVisit, `got ${r.perVisit}, expected ${expected.perVisit}`);
+    ok("monthly matches engine", Math.abs(r.monthly - expected.monthly) < 0.005, `got ${r.monthly}, expected ${expected.monthly}`);
+    ok("tier_name from PRICE_BOOK", r.tier_name === PRICE_BOOK.signature.name);
+    ok("currency USD", r.currency === "USD");
+  }
+}
+
+console.log("\n=== T10.f: confirm_booking — calendar wire is fire-and-forget; booking still succeeds with no key ===");
+{
+  resetStore([]);
+  resetSlots();
+  // No COMPOSIO_API_KEY / GOOGLE_CALENDAR_ID in test env → createCrewEvent returns unconfigured no-op.
+  delete process.env.COMPOSIO_API_KEY;
+  delete process.env.GOOGLE_CALENDAR_ID;
+  upsertLead({
+    lead_id: "L12",
+    channel: "form",
+    photos: ["x"],
+    status: "Ready to Schedule",
+    address: "123 Main St, SF 94110",
+    confirmed_sqft: 2500,
+    slope_tier: "flat",
+    suggested_package: "Signature Care",
+  });
+  const slots = runOfferSlots(ctx("L12"));
+  const slotId = slots[0]!.slotId;
+  const booked = runConfirmBooking(ctx("L12"), { slotId });
+  ok("calendar no-op did NOT block booking", booked.status === "booked", JSON.stringify(booked));
+  ok("lead status Scheduled (booking persisted)",
+    getLead("L12")?.status === "Scheduled" || getLead("L12")?.status === "Work Order Created",
+    getLead("L12")?.status);
+}
+
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail === 0 ? 0 : 1);
+
+}
+
+void main();

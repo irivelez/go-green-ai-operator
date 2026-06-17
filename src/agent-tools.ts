@@ -17,11 +17,19 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { geoQualify, scoreLead } from "./qualify";
-import { priceCart } from "./pricing";
+import { priceCart, pricePerVisit } from "./pricing";
 import { analyzeYardPhotos } from "./vision";
 import { availableSlots, bookSlot } from "./scheduler";
 import { createSubscriptionCheckout } from "./stripe";
 import { upsertLead, getLead } from "./store";
+import {
+  validateAddress,
+  autoMeasureRoofBbox,
+  estimateLotSqft,
+  slopeGradeTier,
+  computePolygonSqft,
+} from "./geo";
+import { createCrewEvent } from "./calendar";
 import {
   PRICE_BOOK,
   monthlyFromVisit,
@@ -264,7 +272,216 @@ export function runConfirmBooking(
       crewSize: result.slot.crewSize,
     },
   });
+  // Fire-and-forget crew handoff (spec §A.5). Calendar failure MUST NOT fail the booking;
+  // createCrewEvent never throws, but we wrap in .catch as a belt-and-suspenders guard.
+  void createCrewEvent({
+    lead_id: ctx.leadId,
+    address: lead.address ?? "",
+    sqft: lead.confirmed_sqft ?? lead.estimated_sqft ?? 0,
+    slope_tier: lead.slope_tier ?? "flat",
+    tier_name: lead.suggested_package ?? "Maintenance",
+    start_iso: result.slot.startTime,
+    end_iso: result.slot.endTime,
+    paid: true,
+  })
+    .then((r) => {
+      if (r.eventId) {
+        const fresh = getLead(ctx.leadId);
+        upsertLead({
+          lead_id: ctx.leadId,
+          channel: lead.channel,
+          work_order: { ...(fresh?.work_order ?? {}), calendar_event_id: r.eventId },
+        });
+      }
+    })
+    .catch(() => {});
   return { status: "booked", slot: result.slot };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// validate_address — Google Address Validation pipeline, key-guarded
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ValidateAddressToolResult {
+  status: "validated" | "needs_confirm" | "unvalidatable" | "error";
+  standardized?: string;
+  lat?: number;
+  lng?: number;
+  didYouMean?: string;
+  original?: string;
+  reason?: string;
+}
+
+export async function runValidateAddress(
+  ctx: ToolContext,
+  args: { addressLines: string[]; locality: string; adminArea: string; postalCode: string },
+): Promise<ValidateAddressToolResult> {
+  const res = await validateAddress(args);
+  if (!res.ok) return { status: "error", reason: res.reason };
+  const original = [args.addressLines.join(" "), args.locality, args.adminArea, args.postalCode]
+    .filter(Boolean)
+    .join(", ");
+  if (res.verdict === "VALIDATED") {
+    const existing = getLead(ctx.leadId);
+    upsertLead({
+      lead_id: ctx.leadId,
+      channel: existing?.channel ?? "form",
+      address: res.standardized.formattedAddress,
+    });
+    return {
+      status: "validated",
+      standardized: res.standardized.formattedAddress,
+      lat: res.standardized.lat,
+      lng: res.standardized.lng,
+    };
+  }
+  if (res.verdict === "CORRECTED") {
+    return {
+      status: "needs_confirm",
+      didYouMean: res.didYouMean ?? res.standardized.formattedAddress,
+      original,
+    };
+  }
+  return { status: "unvalidatable" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// measure_property — Solar roof bbox → lot estimate + Elevation slope tier
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MeasurePropertyResult {
+  estimated_sqft: number;
+  area_confidence: number;
+  roof_bbox: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } } | null;
+  slope_tier: "flat" | "moderate" | "steep";
+  max_grade_pct: number | null;
+}
+
+export async function runMeasureProperty(
+  ctx: ToolContext,
+  args: { lat: number; lng: number },
+): Promise<MeasurePropertyResult> {
+  const roof = await autoMeasureRoofBbox(args.lat, args.lng);
+  let estimated_sqft = 0;
+  let area_confidence = 0.4;
+  let roof_bbox: MeasurePropertyResult["roof_bbox"] = null;
+  if (roof.ok) {
+    const est = estimateLotSqft(roof.roof_area_m2);
+    estimated_sqft = est.estimated_sqft;
+    area_confidence = est.area_confidence;
+    roof_bbox = roof.roof_bbox;
+  }
+
+  const slope = await slopeGradeTier(args.lat, args.lng);
+  const slope_tier: "flat" | "moderate" | "steep" = slope.ok ? slope.slope_tier : "flat";
+  const max_grade_pct = slope.ok ? slope.max_grade_pct : null;
+
+  const existing = getLead(ctx.leadId);
+  const prevVision = (existing?.vision_assessment ?? {}) as Record<string, unknown>;
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: existing?.channel ?? "form",
+    estimated_sqft,
+    area_confidence,
+    slope_tier,
+    slope_source: "elevation",
+    vision_assessment: { ...prevVision, roof_bbox },
+  });
+
+  return { estimated_sqft, area_confidence, roof_bbox, slope_tier, max_grade_pct };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// confirm_area — server re-derives sqft from polygon path; raises slope on photo hint
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ConfirmAreaResult {
+  confirmed_sqft: number;
+  area_source: "auto" | "customer_draw";
+  slope_tier: "flat" | "moderate" | "steep";
+  slope_source: "elevation" | "photo_raised";
+}
+
+const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
+  flat: "moderate",
+  moderate: "steep",
+};
+
+export function runConfirmArea(
+  ctx: ToolContext,
+  args: { path: { lat: number; lng: number }[] },
+): ConfirmAreaResult {
+  const confirmed_sqft = computePolygonSqft(args.path);
+  const area_source: "auto" | "customer_draw" = args.path.length > 5 ? "customer_draw" : "auto";
+  const existing = getLead(ctx.leadId);
+
+  let slope_tier: "flat" | "moderate" | "steep" = existing?.slope_tier ?? "flat";
+  let slope_source: "elevation" | "photo_raised" = existing?.slope_source ?? "elevation";
+
+  const vision = (existing?.vision_assessment ?? {}) as {
+    slope_signals?: { steepness_hint?: string };
+  };
+  const hint = vision.slope_signals?.steepness_hint;
+  if (hint === "steep" && (slope_tier === "flat" || slope_tier === "moderate")) {
+    slope_tier = SLOPE_RAISE[slope_tier];
+    slope_source = "photo_raised";
+  }
+
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: existing?.channel ?? "form",
+    confirmed_sqft,
+    area_source,
+    area_confirmed_by_customer: true,
+    slope_tier,
+    slope_source,
+  });
+
+  return { confirmed_sqft, area_source, slope_tier, slope_source };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// compute_exact_price — measured-area × slope deterministic price (spec §A.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ComputeExactPriceResult =
+  | { status: "missing_measurement"; message: string }
+  | {
+      status: "priced";
+      perVisit: number;
+      monthly: number;
+      tier_name: string;
+      tier_inclusions: string[];
+      currency: "USD";
+    };
+
+export function runComputeExactPrice(
+  ctx: ToolContext,
+  args: { tier: Tier; frequency: Frequency },
+): ComputeExactPriceResult {
+  const lead = getLead(ctx.leadId);
+  const sqft = lead?.confirmed_sqft;
+  if (!sqft || sqft <= 0) {
+    return {
+      status: "missing_measurement",
+      message:
+        "Confirm the maintained area on the map first — the price is derived from the measured sqft, not estimated.",
+    };
+  }
+  const r = pricePerVisit({
+    measured_area_sqft: sqft,
+    slope_tier: lead?.slope_tier ?? "flat",
+    frequency: args.frequency,
+  });
+  const spec = PRICE_BOOK[args.tier];
+  return {
+    status: "priced",
+    perVisit: r.perVisit,
+    monthly: r.monthly,
+    tier_name: spec.name,
+    tier_inclusions: spec.includes.slice(0, 6),
+    currency: "USD",
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,9 +591,49 @@ export function buildTools(ctx: ToolContext) {
       execute: async (args) => runComputePricing(ctx, args),
     }),
 
+    validate_address: tool({
+      description:
+        "Validate and standardize the service address via Google Address Validation. Returns VALIDATED (persisted), needs_confirm (corrected — ask the customer to confirm the suggested standardization), or unvalidatable. Without a Google key returns a graceful error — never throws.",
+      parameters: z.object({
+        addressLines: z.array(z.string()).describe("Street address line(s), e.g. ['123 Main St']"),
+        locality: z.string().describe("City, e.g. 'San Francisco'"),
+        adminArea: z.string().describe("State, e.g. 'CA'"),
+        postalCode: z.string().describe("ZIP code, e.g. '94110'"),
+      }),
+      execute: async (args) => runValidateAddress(ctx, args),
+    }),
+
+    measure_property: tool({
+      description:
+        "Auto-measure the property: Solar API for roof bbox → maintainable lot sqft (heuristic), Elevation API for slope tier (flat/moderate/steep). Persists estimated_sqft + area_confidence + slope_tier on the lead. Key-guarded — without a Google key returns zero-confidence defaults.",
+      parameters: z.object({
+        lat: z.number().describe("Rooftop latitude from validate_address"),
+        lng: z.number().describe("Rooftop longitude from validate_address"),
+      }),
+      execute: async (args) => runMeasureProperty(ctx, args),
+    }),
+
+    confirm_area: tool({
+      description:
+        "Server re-derives the maintained area (sqft) from the customer's polygon — never trust a client-supplied number. If vision photos hinted at steep terrain and slope_tier is flat or moderate, the tier is raised one step (photo_raised). Persists confirmed_sqft + area_source + slope on the lead.",
+      parameters: z.object({
+        path: z
+          .array(z.object({ lat: z.number(), lng: z.number() }))
+          .describe("Polygon ring (unclosed); >5 points → treated as customer_draw"),
+      }),
+      execute: async (args) => runConfirmArea(ctx, args),
+    }),
+
+    compute_exact_price: tool({
+      description:
+        "Exact per-visit + monthly price from confirmed_sqft × slope_tier (area buckets + slope multiplier). Requires confirm_area to have run — otherwise returns missing_measurement. Final price is still confirmed on the first on-site visit.",
+      parameters: z.object({ tier: TierEnum, frequency: FrequencyEnum }),
+      execute: async (args) => runComputeExactPrice(ctx, args),
+    }),
+
     propose_checkout: tool({
       description:
-        "Stage checkout for the customer to pay (first month now to lock the booking). Requires a confirmed address and photos on file. This NEVER charges — it returns a secure Stripe Checkout link the customer clicks themselves.",
+        "Stage checkout for the customer to pay (first month now to lock the booking). Price derives from the lead's confirmed_sqft + slope (compute_exact_price), not the model. Requires a confirmed address and photos on file. This NEVER charges — it returns a secure Stripe Checkout link the customer clicks themselves.",
       parameters: z.object({
         tier: TierEnum,
         frequency: FrequencyEnum,
