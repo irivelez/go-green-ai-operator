@@ -3,6 +3,7 @@
 
 import { resetStore } from "./store";
 import { runOperator } from "./operator";
+import { getStripeClient } from "./stripe";
 
 resetStore([]);
 
@@ -11,6 +12,51 @@ const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stripe guard tests (STRIPE_LIVE_OK flag)
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== Stripe Guard: Live Key Protection ===");
+
+// Test 1: sk_test_ always works
+const oldKey1 = process.env.STRIPE_SECRET_KEY;
+process.env.STRIPE_SECRET_KEY = "sk_test_FAKE";
+delete process.env.STRIPE_LIVE_OK;
+try {
+  getStripeClient();
+  ok("sk_test_ key accepted", true);
+} catch (e) {
+  ok("sk_test_ key accepted", false, String(e));
+}
+process.env.STRIPE_SECRET_KEY = oldKey1;
+
+// Test 2: sk_live_ without STRIPE_LIVE_OK throws with helpful message
+const oldKey2 = process.env.STRIPE_SECRET_KEY;
+process.env.STRIPE_SECRET_KEY = "sk_live_FAKE";
+delete process.env.STRIPE_LIVE_OK;
+try {
+  getStripeClient();
+  ok("sk_live_ without flag rejected", false, "should have thrown");
+} catch (e) {
+  const msg = String(e);
+  ok("sk_live_ without flag rejected", true, msg);
+  ok("error mentions STRIPE_LIVE_OK", /STRIPE_LIVE_OK/.test(msg), msg);
+}
+process.env.STRIPE_SECRET_KEY = oldKey2;
+
+// Test 3: sk_live_ with STRIPE_LIVE_OK=1 accepted
+const oldKey3 = process.env.STRIPE_SECRET_KEY;
+process.env.STRIPE_SECRET_KEY = "sk_live_FAKE";
+process.env.STRIPE_LIVE_OK = "1";
+try {
+  getStripeClient();
+  ok("sk_live_ with STRIPE_LIVE_OK=1 accepted", true);
+} catch (e) {
+  ok("sk_live_ with STRIPE_LIVE_OK=1 accepted", false, String(e));
+}
+process.env.STRIPE_SECRET_KEY = oldKey3;
+delete process.env.STRIPE_LIVE_OK;
 
 async function main() {
   console.log("\n=== Conversation 1: A-lead intake → price → book ===");

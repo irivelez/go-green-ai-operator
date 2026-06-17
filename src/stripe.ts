@@ -29,22 +29,36 @@ import {
 import { upsertLead, actionSeen, getLead } from "./store";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Client — test-mode only
+// Client — test-mode by default, live-mode gated by STRIPE_LIVE_OK=1
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getStripeClient(): Stripe {
+let liveModePrinted = false;
+
+export function getStripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
     throw new Error(
       "STRIPE_SECRET_KEY is not set. This build uses Stripe TEST mode only (sk_test_…).",
     );
   }
-  if (!key.startsWith("sk_test_")) {
-    throw new Error(
-      "STRIPE_SECRET_KEY must be a TEST-mode key (sk_test_…). Live keys are not accepted.",
-    );
+  if (key.startsWith("sk_test_")) {
+    return new Stripe(key);
   }
-  return new Stripe(key);
+  if (key.startsWith("sk_live_")) {
+    if (process.env.STRIPE_LIVE_OK !== "1") {
+      throw new Error(
+        "STRIPE_SECRET_KEY is a LIVE key (sk_live_…). Set STRIPE_LIVE_OK=1 to enable live mode.",
+      );
+    }
+    if (!liveModePrinted) {
+      console.warn("[stripe] LIVE MODE active — real charges enabled");
+      liveModePrinted = true;
+    }
+    return new Stripe(key);
+  }
+  throw new Error(
+    "STRIPE_SECRET_KEY must start with sk_test_ or sk_live_.",
+  );
 }
 
 // Cents-precision conversion. Avoid binary-float drift on round dollar values.
