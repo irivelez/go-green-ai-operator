@@ -2,7 +2,7 @@
 // This is the 30-minute demo of correctness: intake→qualify→price→book + escalation + hard rules.
 // Run: npx tsx src/core.test.ts
 
-import { upsertLead, resetStore } from "./store";
+import { upsertLead, resetStore, appendEvent, listEvents, getLead } from "./store";
 import {
   tool_score_lead, tool_quote_range, tool_book_evaluation,
   tool_create_work_order, tool_raise_escalation, checkEscalation, visionFallback,
@@ -62,6 +62,33 @@ console.log("\n=== Scenario 3: hard rule — no address → no scheduling ===");
   const noAddr = upsertLead({ lead_id: "L3", channel: "telegram", name: "Pat", photos: ["p.jpg"] });
   const booked = tool_book_evaluation(noAddr, "2026-06-16T17:00:00Z");
   ok("booking denied without address", !booked.ok, booked.reason ?? "");
+}
+
+console.log("\n=== Scenario 4: events log captures owner corrections (HITL learning loop) ===");
+{
+  upsertLead({ lead_id: "L4", channel: "telegram", name: "Mo",
+    address: "1500 Page St, San Francisco, 94117", estimated_sqft: 3800,
+    area_source: "auto", area_confidence: 0.62 });
+  const e1 = appendEvent("L4", { actor: "owner", action: "override_area",
+    reason_code: "area_wrong", corrected_value: 4200,
+    agent_decision: { estimated_sqft: 3800 } });
+  ok("appendEvent returns event with ts", typeof e1.ts === "string" && e1.ts.length > 0);
+  const events = listEvents("L4");
+  ok("listEvents has one event", events.length === 1, `got ${events.length}`);
+  const first = events[0]!;
+  ok("event reason_code preserved", first.reason_code === "area_wrong", first.reason_code);
+  ok("event corrected_value preserved", first.corrected_value === 4200, String(first.corrected_value));
+  ok("event actor preserved", first.actor === "owner");
+
+  appendEvent("L4", { actor: "agent", action: "rescore", inputs: { sqft: 4200 } });
+  const events2 = listEvents("L4");
+  ok("order preserved on second append", events2.length === 2 && events2[1]!.action === "rescore");
+
+  const lead = getLead("L4");
+  ok("extended fields persist on Lead", lead?.estimated_sqft === 3800 && lead?.area_source === "auto");
+
+  const noLead = appendEvent("L_missing", { actor: "system", action: "noop" });
+  ok("missing lead no-op returns unsaved event", typeof noLead.ts === "string" && listEvents("L_missing").length === 0);
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
