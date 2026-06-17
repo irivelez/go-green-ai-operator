@@ -49,5 +49,5 @@ console.log("\n=== pickInitialPath: no roof_bbox → empty (customer draws) ==="
   ok("returns []", path.length === 0, `got ${path.length}`);
 }
 
-console.log(`\n${fail === 0 ? "✅" : "❌"} ${pass} passed, ${fail} failed`);
+console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail === 0 ? 0 : 1);
