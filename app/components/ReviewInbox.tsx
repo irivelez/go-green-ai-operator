@@ -6,12 +6,32 @@ import type { Lead } from "./types";
 import { ChannelIcon, ScoreChip, LanguageChip } from "./icons";
 import { fmtRange, initials, relTime } from "./format";
 
+// Structured reason codes captured into the events log (spec §A.6).
+// Keep this list in sync with the server-side override route allow-list.
+const REASON_CODES: { value: string; label: string }[] = [
+  { value: "area_wrong", label: "Area wrong" },
+  { value: "slope_underestimated", label: "Slope underestimated" },
+  { value: "should_have_escalated", label: "Should have escalated" },
+  { value: "price_too_low", label: "Price too low" },
+  { value: "address_wrong", label: "Address wrong" },
+  { value: "other", label: "Other" },
+];
+
+export interface ReviewActionPayload {
+  reason_code?: string;
+  corrected_value?: string;
+}
+
 export function ReviewInbox({
   leads,
   onAction,
 }: {
   leads: Lead[];
-  onAction: (leadId: string, action: "approve" | "reject") => Promise<void>;
+  onAction: (
+    leadId: string,
+    action: "approve" | "reject",
+    payload: ReviewActionPayload,
+  ) => Promise<void>;
 }) {
   const queue = leads.filter((l) => l.status === "Needs Human Review");
 
@@ -66,21 +86,50 @@ function ReviewRow({
   onAction,
 }: {
   lead: Lead;
-  onAction: (leadId: string, action: "approve" | "reject") => Promise<void>;
+  onAction: (
+    leadId: string,
+    action: "approve" | "reject",
+    payload: ReviewActionPayload,
+  ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  // Which action's reason panel is open (null = closed). Inline panel, not a portal —
+  // keeps the dashboard's flat, single-surface feel consistent with KpiRow / LeadCard.
+  const [panel, setPanel] = useState<"approve" | "reject" | null>(null);
+  const [reasonCode, setReasonCode] = useState<string>(REASON_CODES[0]!.value);
+  const [correctedValue, setCorrectedValue] = useState<string>("");
+
   const display = lead.name?.trim() || `Lead ${lead.lead_id.slice(-6)}`;
   const range = fmtRange(lead.price_range);
 
-  const run = async (action: "approve" | "reject") => {
+  const openPanel = (action: "approve" | "reject") => {
     if (busy) return;
-    setBusy(action);
+    setPanel(action);
+    setReasonCode(REASON_CODES[0]!.value);
+    setCorrectedValue("");
+  };
+
+  const cancel = () => {
+    setPanel(null);
+    setCorrectedValue("");
+  };
+
+  const confirm = async () => {
+    if (!panel || busy) return;
+    setBusy(panel);
     try {
-      await onAction(lead.lead_id, action);
+      await onAction(lead.lead_id, panel, {
+        reason_code: reasonCode,
+        corrected_value: correctedValue.trim() || undefined,
+      });
+      setPanel(null);
+      setCorrectedValue("");
     } finally {
       setBusy(null);
     }
   };
+
+  const isApprovePanel = panel === "approve";
 
   return (
     <div className="px-4 py-3.5 sm:px-5 hover:bg-amber-50/30 transition-colors">
@@ -131,34 +180,106 @@ function ReviewRow({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => run("reject")}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-700 transition hover:bg-stone-50 hover:border-stone-400 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {busy === "reject" ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
+      {panel === null ? (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => openPanel("reject")}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-700 transition hover:bg-stone-50 hover:border-stone-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <X className="h-3.5 w-3.5" strokeWidth={2.2} />
-          )}
-          Reject
-        </button>
-        <button
-          type="button"
-          onClick={() => run("approve")}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-1.5 rounded-full bg-moss-600 px-3.5 py-1.5 text-[12px] font-semibold text-moss-50 transition hover:bg-moss-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-petal"
-        >
-          {busy === "approve" ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={() => openPanel("approve")}
+            disabled={busy !== null}
+            data-testid={`approve-${lead.lead_id}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-moss-600 px-3.5 py-1.5 text-[12px] font-semibold text-moss-50 transition hover:bg-moss-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-petal"
+          >
             <Check className="h-3.5 w-3.5" strokeWidth={2.4} />
-          )}
-          Approve
-        </button>
-      </div>
+            Approve
+          </button>
+        </div>
+      ) : (
+        <div
+          data-testid={`reason-panel-${lead.lead_id}`}
+          className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2.5"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-900/75">
+              {isApprovePanel ? "Approve" : "Reject"} — why?
+            </span>
+            <span className="text-[11px] text-amber-900/60">
+              captured to the learning log
+            </span>
+          </div>
+
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-wider font-semibold text-moss-700/70 mb-1">
+              Reason
+            </span>
+            <select
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value)}
+              disabled={busy !== null}
+              className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[12px] text-bark-900 focus:outline-none focus:border-amber-400 disabled:opacity-50"
+            >
+              {REASON_CODES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-wider font-semibold text-moss-700/70 mb-1">
+              Corrected value <span className="opacity-60 normal-case">(optional)</span>
+            </span>
+            <input
+              type="text"
+              value={correctedValue}
+              onChange={(e) => setCorrectedValue(e.target.value)}
+              disabled={busy !== null}
+              placeholder="e.g. 4200 sqft, steep, out of area"
+              className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[12px] text-bark-900 placeholder:text-moss-700/40 focus:outline-none focus:border-amber-400 disabled:opacity-50"
+            />
+          </label>
+
+          <div className="flex items-center justify-end gap-2 pt-0.5">
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={busy !== null}
+              className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-700 transition hover:bg-stone-50 hover:border-stone-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={busy !== null}
+              data-testid={`confirm-${lead.lead_id}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition shadow-petal disabled:opacity-50 disabled:cursor-not-allowed ${
+                isApprovePanel
+                  ? "bg-moss-600 text-moss-50 hover:bg-moss-700"
+                  : "bg-stone-700 text-stone-50 hover:bg-stone-800"
+              }`}
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isApprovePanel ? (
+                <Check className="h-3.5 w-3.5" strokeWidth={2.4} />
+              ) : (
+                <X className="h-3.5 w-3.5" strokeWidth={2.2} />
+              )}
+              Confirm {isApprovePanel ? "approve" : "reject"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
