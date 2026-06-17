@@ -1,12 +1,173 @@
 # Go Green Maintenance AI Operator — Build Spec
 
-**Version:** 1.0 · **Status:** Ready to build · **Owner:** Deltanova (design-partner engagement)
+**Version:** 2.0 · **Status:** Ready to build (pivot) · **Owner:** Deltanova (design-partner engagement)
 **Design partner:** Go Green Landscape — premium garden maintenance, San Francisco
-**Document type:** Production build spec (agent-native). This supersedes the prior MVP doc's low-code (Airtable + Make + OpenAI) assumption.
+**Document type:** Production build spec (agent-native).
+
+> **READ THIS FIRST — v2 supersedes v1 where they conflict.** [§A — V2: Autonomous ad→pay→book sales pipeline](#a--v2-autonomous-adpaybook-sales-pipeline) is the authoritative spec for the current build. Sections **1–19 below are v1 context** (the autonomous intake→qualify→price→**book-an-evaluation** funnel) and remain valid except where §A overrides them. The biggest overrides: pricing is now **measured-area + slope** (not guessed buckets), the first autonomous action is a **live Stripe charge for month-1 recurring** (not a free on-site evaluation), and the lead arrives from a **Meta ad** (not a cold inbound message). The Engineering Constitution and hard invariants (idempotency, range/extras discipline, escalation gate, "the LLM never charges Stripe") carry over unchanged.
+
+---
+
+## A — V2: Autonomous ad→pay→book sales pipeline
+
+**Status:** authoritative for the current build · **Supersedes:** v1 §0, §3.2 staging, §6 state machine endpoint, §9.1 size model, §12.1 on-site-review rule (for measurable standard lots) · **Carries over:** everything else in v1 + the Engineering Constitution in `AGENTS.md`.
+
+### A.0 The pitch (v2)
+
+> A Meta-ad lead who wants their yard maintained lands in a chat, and the agent **measures their property from the address, prices it exactly, collects the first month by card, and books the first service onto the crew's calendar — autonomously, end to end.** Humans touch only the fraction the agent flags, and every human touch is captured as a labeled correction that tunes the system to flag less next time.
+
+The win condition is **highest autonomous conversion, money actually collected, minimal outbound.** Outbound is the small tail of leads that didn't convert — and the agents work that tail too.
+
+### A.1 The funnel (the one flow that matters)
+
+```
+Meta ad (intent encoded in the click)
+   │
+   ▼
+1. WELCOME        agent opens already knowing the service intent (from ad param); blank-chat otherwise
+2. ADDRESS        customer enters address → Address Validation API → "did you mean X?" → ROOFTOP geocode
+                  HARD GATE: no validated address → no measurement → no price
+3. MEASURE        address → parcel polygon (LightBox) → minus building footprint → maintainable area (sqft)
+                  + slope grade from Elevation API (coarse tier) + photos (support + slope cross-check)
+4. CONFIRM AREA   show the customer an outlined satellite image: "we'll maintain ~X sqft — look right?"
+                  → tap "looks right" (consent) OR drag/redraw the area (self-service fallback when data is thin)
+5. PRICE          measured-area bucket × frequency × slope multiplier = ONE EXACT per-visit price
+                  (deterministic; never an LLM number; tiers = "what's included" descriptors only)
+6. PAY            propose_checkout stages a LIVE Stripe Checkout for month-1 recurring → customer pays
+                  HARD GATE: the LLM never charges; Stripe charges on the customer's click
+7. SCHEDULE       only after paid → offer_slots → customer picks → confirm_booking (refuses until paid)
+8. CREW HANDOFF   booked job → Google Calendar event (Composio) with the work order:
+                  address · measured area · slope · tier inclusions · access notes · PAID status
+   │
+   ▼ (at any step, on a flag)
+ESCALATE          raise_escalation → owner dashboard → human acts → correction captured as a label (§A.6)
+```
+
+This reuses the existing tool-driven generative-UI funnel (`app/agent` + `app/api/funnel/agent/route.ts` + `src/agent-tools.ts`). New tools slot into `buildTools()`; new cards slot into `cards.tsx`. **No rewrite — extension.**
+
+### A.2 Geo-measurement pipeline (the new pricing input)
+
+There is **no "Google Earth measure" API** — that tool is manual desktop-only (confirmed). Automated measurement is assembled from real APIs. **V1 is free-first** (locked): try a cheap/free auto-measure, and **fall back to customer-draws-on-map only when confidence is low.** Paid parcel/AI vendors (LightBox, Nearmap) are the **precision upgrade**, deliberately OUT of V1 to de-risk per-lead cost before conversion is proven.
+
+**V1 cost target: ~$0–0.02/lead** (vs $0.10–2.15 with paid parcel/AI). All Google calls below sit comfortably inside Google's $200/mo free Maps credit at test volume.
+
+| Step | V1 service (free-first) | Input → Output | Cost / notes |
+|---|---|---|---|
+| Typeahead (prevent typos) | **Google Places Autocomplete** | partial string → ranked predictions + placeId | At the address input, so most addresses are clean before validation. ~$0.003/req |
+| Validate + correct address | **Google Address Validation API** | address → `verdict` (VALIDATED/CORRECTED/UNVALIDATABLE) + standardized address + ROOFTOP geocode | Surfaces "did you mean X?"; `CORRECTED`/non-ROOFTOP → confirm with customer before measuring. ~$0.005/req. Docs: developers.google.com/maps/documentation/address-validation |
+| **Auto-measure attempt** (building) | **Google Solar `buildingInsights:findClosest`** | geocode → roof/building footprint + `boundingBox` | ~$0.01/req. Gives the building footprint to subtract + a satellite-anchored outline to pre-draw |
+| **Auto-measure attempt** (lot) | **Parcel-area ESTIMATE** = building bbox scaled by a residential lot-coverage heuristic (SF default), bounded by the satellite frame | geocode + roof bbox → estimated maintainable sqft + **confidence** | Free (derived). Coarse on purpose — its job is to PRE-DRAW a starting polygon, not to be the final number |
+| Slope | **Google Elevation API** (sampled grid → grade %) | parcel grid points → elevations → coarse tier (flat / moderate / steep) | ~free at test volume. ~10–30m res is coarse → **photo cross-check is mandatory** (§A.3). USGS 3DEP 1m = free precise upgrade |
+| **Fallback + confirm (always)** | **Google Maps JS (satellite + Drawing/Geometry)** | render the auto-outline; customer drags/redraws the polygon → `geometry.spherical.computeArea()` → sqft client-side | **$0/measurement.** The §A.1-step-4 card. The customer's confirmed/redrawn polygon is BOTH the authoritative measurement AND the price consent |
+
+**Auto-measure → draw-on-failure logic (locked):**
+
+```
+1. geocode (validated address)
+2. auto-measure attempt:
+     roof bbox (Solar) + lot-coverage heuristic → estimated_sqft + confidence
+3. ALWAYS render the result on a satellite map as an editable polygon (pre-drawn from step 2,
+   or a blank draw surface if step 2 returned nothing / low confidence)
+4. confidence HIGH  → polygon is pre-drawn; customer taps "looks right" (one tap) or nudges it
+   confidence LOW   → polygon is rough/absent; customer draws/redraws the maintained area
+5. the FINAL authoritative area = the polygon the customer confirmed (computeArea on their polygon)
+6. persist: estimated_sqft, confirmed_sqft, area_source ("auto"|"customer_draw"),
+            area_confidence, area_confirmed_by_customer=true
+```
+
+The customer ALWAYS confirms on the map; the only thing confidence changes is whether we hand them a pre-drawn outline (fast, one tap) or a blank canvas (they draw). **No human/owner step in either path** — escalation happens only if the customer abandons without confirming a polygon, or on an §A.1 flag.
+
+**Maintainable-area rule (locked):** present "approx maintainable area" = the customer-confirmed polygon, with the building footprint pre-subtracted from the auto-outline when available. Not exact lawn segmentation in V1 (Nearmap AI lawn/hardscape split is the paid precision upgrade).
+
+**Paid precision upgrade (POST-V1, evidence-gated per Constitution §0):** swap the step-2 heuristic for **LightBox Parcels** (real county polygon + area, ~$0.10) and optionally **Nearmap AI Rollup** (true roof/driveway/tree/lawn split, ~$0.50–2). This removes the customer-draw step entirely for covered addresses. Add only once conversion justifies the per-lead spend. Docs: developer.lightboxre.com/apis/parcels · developer.nearmap.com/docs/ai-api
+
+### A.3 Slope handling (locked)
+
+Coarse elevation grade is a **price modifier**, not a gate — but it has a known failure: a terraced backyard behind a flat-fronted house reads as flat and underprices the exact SF hill-lots where labor explodes. Corrective:
+
+- Compute coarse grade tier from Elevation API grid.
+- **Agent explicitly prompts for / inspects a slope-revealing photo** (stairs, retaining walls, terraces).
+- **Elevation-flat BUT photo-shows-steps → bump the slope tier.** Photo evidence can raise, not lower, the modifier (so it isn't gameable by flattering angles).
+- Slope tier feeds the exact price (§A.4).
+
+### A.4 Pricing model (v2 — supersedes v1 §9.1)
+
+**Locked:** `exact_per_visit = f(area_bucket, frequency, slope_tier)`. One number, charged directly — no range to the paying customer, no human approval for standard measurable lots.
+
+- Replace [`PER_VISIT`/`CLEANUP` in `src/pricing.ts`](./src/pricing.ts) (keyed `small|medium|large`) with **area-range buckets** (sqft → price), each × frequency, × **slope multiplier** (e.g. flat ×1.0 / moderate ×1.15 / steep ×1.35 — values from the rate-card sign-off, §19.6).
+- Replace `PricingCase.yard_size_bucket: YardSize` with `{ measured_area_sqft: number; slope_tier: "flat"|"moderate"|"steep" }`.
+- Add to the measurement result + `Lead` shape: `estimated_sqft`, `confirmed_sqft`, `area_source: "auto"|"customer_draw"`, `area_confidence`, `area_confirmed_by_customer: boolean`, `slope_tier`, `slope_source`. The pricing input `measured_area_sqft` = `confirmed_sqft` (the customer-confirmed polygon is always authoritative — §A.2).
+- **`PRICE_BOOK` (tiers) is UNCHANGED** — tiers become "what's included" descriptors shown next to the exact price; the area/slope/frequency math drives the dollars.
+- Blast radius (from audit): rewrite `pricing.ts` lookups + `quoteRange`, retire `operator.ts:inferYardSize()`, update `vision.ts` schema/prompt, update `seed.ts` + `agent-evals.ts` fixtures. `priceCart`, Stripe, idempotency, escalation gate untouched.
+
+### A.5 Money + crew handoff (supersedes v1 evaluation-first)
+
+**Locked:** the first autonomous action is a **live Stripe charge for month-1 recurring maintenance.** Geo-measurement **replaces the on-site evaluation gate** for standard measurable lots — v1 §12.1 "no final price without on-site review" is **lifted for those cases** (still enforced for escalated/unmeasurable ones).
+
+- **Order (locked): pay FIRST, then pick slot.** `confirm_booking` already refuses until paid — keep that gate.
+- **Margin safety without on-site review (locked):** the **first crew visit re-measures on-site**; if reality is materially off the remote data, the agent **reprices visit-2-onward** (with notice). Month-1 stays. Reversibility (correct-forward, not clawback) is what makes the up-front autonomous charge safe (Constitution §5).
+- **V1 ships LIVE Stripe** (real money), not test mode.
+- **Crew endpoint (locked): Google Calendar event** via the already-wired Composio path — carrying address · measured area · slope · tier inclusions · access notes · paid-status. The crew lives in their calendar; no new app to adopt. (Internal `work_order` record persists in the store for the office/dashboard.)
+
+### A.6 Two UIs + the human-in-the-loop learning loop
+
+**UI 1 — Lead funnel** (`app/agent`): the ad→pay→book chat above. New cards: **AddressConfirmCard** ("did you mean X?"), **AreaConfirmCard** (satellite + outline + drag-to-redraw), **SlopePhotoPromptCard**, **ExactPriceCard**, then existing checkout/slot/confirmation cards.
+
+**UI 2 — Owner dashboard** (`app/page.tsx` + review inbox): watch the pipeline, intervene on flags. **Ships in V1 with core features** (thin but real, working day 1).
+
+**The learning loop (NEW — no substrate exists today; must be built):** the current approve/reject only flips status + appends free text. V2 requires:
+
+1. **Structured reason code** on every approve/reject/override (e.g. `area_wrong · slope_underestimated · should_have_escalated · price_too_low · address_wrong`).
+2. **The corrected value**, not just yes/no — when the owner overrides, capture the RIGHT answer (correct area, correct slope tier, correct decision). This is the highest-signal datum.
+3. A minimal **`events` store** (the substrate for both): append-only `{lead_id, ts, actor, action, reason_code?, corrected_value?, agent_decision, inputs}`. This is the v1 §17 audit log, finally real, and the home for #1 and #2.
+4. **Periodic rubric/prompt tuning** from accumulated reason-codes + corrections — the actual "reduce human intervention over time" mechanism. (Auto-regression-eval-per-override is a fast-follow, not V1.)
+
+> Scope honesty: the user prioritized reason-code + corrected-value + periodic tuning. Full per-lead event tracing and auto-generated regression evals are described as the natural extension but are **not V1 blockers** — except the minimal `events` row, which is required because the corrected value has nowhere else to live.
+
+### A.7 Lead source — Meta ads
+
+**Locked:** leads arrive as a **blank chat with the service intent encoded in the ad click** (UTM/param), no Meta Lead Form for V1. The funnel route reads the intent param so the agent opens warm ("Looks like you're after weekly mowing — let's get you booked"). Meta Instant Forms + webhook ingestion is a later option, not V1.
+
+### A.8 V1 market-test definition of done (locked must-be-real)
+
+For a real paying customer from a real Meta ad, ALL must genuinely work end-to-end:
+
+1. **Real address-validate + auto area measurement** (with map confirm/draw fallback).
+2. **Real exact price + real LIVE Stripe charge** (money actually collected).
+3. **Real slot booking the crew can see** (Google Calendar event with the work order).
+4. **Real owner dashboard** shipped with core features (watch + intervene + capture the structured correction) — thin but real, working day 1.
+
+Deferred / nice-to-have for the test: Nearmap precision lawn-split, USGS 1m slope, Meta Instant Forms, auto-regression-eval generation, multi-channel (WhatsApp/email).
+
+### A.9 New/changed modules (extend-in-place map)
+
+| Module | Action |
+|---|---|
+| `src/geo.ts` (NEW) | address-validate · auto-measure-attempt (Solar roof bbox + lot-coverage heuristic → estimated_sqft + confidence) · slope-grade — free-first wrappers over the APIs in §A.2, each returning a typed result + confidence + source. NO paid parcel vendor in V1. |
+| `src/geo.ts` → measurement | `estimated_sqft` + `area_confidence` feed the map card; the **customer-confirmed polygon** (`geometry.spherical.computeArea`, client-side) is the authoritative `confirmed_sqft`. Draw-on-low-confidence, one-tap-on-high-confidence (§A.2). |
+| `src/pricing.ts` | rewrite `PER_VISIT`/`CLEANUP`/`quoteRange` to area+slope; new `PricingCase` shape (§A.4) |
+| `src/vision.ts` | drop `yard_size_estimate`; add slope-photo cross-check; keep condition/cleanup |
+| `src/agent-tools.ts` | new tools: `validate_address · measure_property · confirm_area · compute_exact_price`; keep `propose_checkout`/`offer_slots`/`confirm_booking`/`raise_escalation` |
+| `src/store.ts` | extend `Lead` with measurement + slope + `area_confirmed_by_customer`; add `events` append-log + reason-code/corrected-value capture |
+| `app/agent/components/cards.tsx` | AddressConfirm · AreaConfirm(map) · SlopePhotoPrompt · ExactPrice cards |
+| `app/components/ReviewInbox.tsx` + approve/reject routes | structured reason-code + corrected-value capture → `events` |
+| Crew handoff | Composio Google Calendar event on booking (work order payload) |
+| `PRICE_BOOK`, Stripe, idempotency, escalation gate, dashboard shell | **unchanged** |
+
+### A.10 Open items for sign-off (v2-specific; extends §19)
+
+1. **Rate card v2:** the area-range→price table + slope multipliers (flat/moderate/steep) need owner sign-off before live auto-charge.
+2. **Measurement (V1 = free-first, LOCKED):** auto-measure attempt (Solar roof bbox + lot-coverage heuristic) → customer-draws-on-map fallback; NO paid parcel/AI vendor in V1. Sign-off needed only on the **lot-coverage heuristic default** (SF residential) and the **confidence threshold** that decides pre-drawn-vs-blank. LightBox/Nearmap are the evidence-gated post-V1 upgrade (§A.2).
+3. **Reprice policy:** the threshold ("materially off") + notice copy for visit-2 reprice after on-site re-measure.
+4. **Meta:** ad-param schema for intent encoding; pixel/conversion tracking on the pay event.
+5. **Live Stripe:** account/keys for live mode + the month-1 recurring product/price IDs.
+6. **Calendar:** which Google Calendar the crew actually uses + event/work-order field mapping.
 
 ---
 
 ## 0. The one-sentence pitch
+
+> **v1 context** — see §A.0 for the v2 pitch. The first autonomous action in v2 is a paid booking, not a free evaluation.
 
 An **autonomous operations layer** that runs Go Green's recurring-maintenance funnel end-to-end — from the first "can you mow my yard?" to a qualified, scoped, calendar-booked evaluation with a crew-ready work order — handling standard cases with **no human in the loop**, and escalating only the calls that genuinely need a human.
 
