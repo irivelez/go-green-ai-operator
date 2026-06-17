@@ -1,5 +1,6 @@
-// Pricing engine — deterministic, range-only (spec §9.1 / §9.2).
-// Pure function. NEVER an LLM guess. Anything outside coverage → escalate (no autonomous range).
+// Pricing engine — deterministic, measured-area × slope (spec §A.4 / §9.2).
+// Pure function. NEVER an LLM guess. pricePerVisit returns ONE exact number;
+// final price is still confirmed on the first on-site visit (spec §9.1).
 
 import {
   PRICE_BOOK,
@@ -15,13 +16,15 @@ import {
 export type YardSize = "small" | "medium" | "large";
 export type Frequency = "weekly" | "biweekly" | "monthly";
 export type PackageTier = "essential" | "signature" | "premium";
+export type SlopeTier = "flat" | "moderate" | "steep";
 
 export interface PricingCase {
-  yard_size_bucket: YardSize;
+  measured_area_sqft: number;
+  slope_tier: SlopeTier;
   frequency: Frequency;
   package_tier?: PackageTier;
   cleanup_required?: boolean;
-  weeks_overdue?: number; // first-cut surcharge driver
+  weeks_overdue?: number; // retained for caller compat; not used by pricePerVisit
   zone?: string;
 }
 
@@ -34,81 +37,89 @@ export interface PriceRange {
   covered: boolean; // false → caller must escalate, no autonomous range
 }
 
-// §9.2 recurring maintenance — price per visit (Go Green premium, SF residential)
-const PER_VISIT: Record<YardSize, Record<Frequency, [number, number]>> = {
-  small: { weekly: [70, 85], biweekly: [95, 115], monthly: [120, 145] },
-  medium: { weekly: [115, 140], biweekly: [155, 190], monthly: [210, 260] },
-  large: { weekly: [210, 260], biweekly: [290, 370], monthly: [420, 540] },
+// §A.4 + §9.2 — recurring maintenance, base per-visit (USD) keyed by MEASURED
+// lot area. Anchors are midpoints of the previous biweekly ranges mapped onto
+// SF residential lot sizes (small <1500 sqft, medium 1500–4000, large >4000).
+// Old biweekly anchors: small [95,115] → 105; medium [155,190] → 173; large [290,370] → 330.
+// TODO(spec §A.10): owner sign-off on rate card v2
+const AREA_BUCKET_SMALL = 105;  // < 1500 sqft
+const AREA_BUCKET_MEDIUM = 173; // 1500 – 4000 sqft (midpoint 172.5 rounded up)
+const AREA_BUCKET_LARGE = 330;  // > 4000 sqft
+
+// §A.4 — slope surcharge multiplier applied to the area-bucket base.
+// TODO(spec §A.10): owner sign-off on rate card v2
+const SLOPE_MULTIPLIER: Record<SlopeTier, number> = {
+  flat: 1.0,
+  moderate: 1.15,
+  steep: 1.35,
 };
 
-// §9.2 typical cleanup job ranges by size
-const CLEANUP: Record<YardSize, [number, number]> = {
-  small: [280, 700],
-  medium: [650, 1500],
-  large: [1300, 3000],
-};
-
-const MIN_SERVICE = [150, 200] as const; // travel + setup floor
-
-// First-cut surcharge for overdue recurring (§9.2)
-function firstCutSurcharge(weeksOverdue?: number): [number, number] {
-  if (!weeksOverdue || weeksOverdue < 2) return [0, 0];
-  if (weeksOverdue <= 3) return [25, 50];
-  if (weeksOverdue <= 6) return [75, 150];
-  return [0, 0]; // 6+ weeks → caller should reprice as cleanup, not surcharge
+function pickAreaBucket(sqft: number): { base: number; label: string } {
+  if (sqft < 1500) return { base: AREA_BUCKET_SMALL, label: "small (<1500 sqft)" };
+  if (sqft <= 4000) return { base: AREA_BUCKET_MEDIUM, label: "medium (1500–4000 sqft)" };
+  return { base: AREA_BUCKET_LARGE, label: "large (>4000 sqft)" };
 }
 
+// Compat helper for legacy callers that still hold a YardSize bucket: maps to a
+// representative measured area inside each bucket. Used by operator.ts which
+// gets the yard size from the vision pass, not a measurement.
+export function yardSizeToSqft(size: YardSize): number {
+  if (size === "small") return 1000;
+  if (size === "medium") return 2500;
+  return 5000;
+}
+
+/**
+ * pricePerVisit — measured-area × slope-multiplier deterministic price.
+ * Returns ONE exact per-visit number plus the monthly equivalent at the chosen
+ * frequency. Final price is still confirmed on the first on-site visit (§9.1).
+ */
+export function pricePerVisit(input: {
+  measured_area_sqft: number;
+  slope_tier: SlopeTier;
+  frequency: Frequency;
+}): { perVisit: number; monthly: number; assumptions: string[]; currency: "USD" } {
+  if (!(input.measured_area_sqft > 0)) {
+    throw new Error("measured_area_sqft required and > 0");
+  }
+  const bucket = pickAreaBucket(input.measured_area_sqft);
+  const mult = SLOPE_MULTIPLIER[input.slope_tier];
+  // Round per-visit to whole dollars — anchors are integers, slope is the only
+  // source of fractional cents and the final number lands on a customer quote.
+  const perVisit = Math.round(bucket.base * mult);
+  const monthly = Math.round(perVisit * FREQUENCY_MULTIPLIER[input.frequency] * 100) / 100;
+  return {
+    perVisit,
+    monthly,
+    assumptions: [
+      `area bucket: ${bucket.label} → base $${bucket.base}/visit`,
+      `slope: ${input.slope_tier} (×${mult})`,
+      "final price confirmed on first on-site visit",
+    ],
+    currency: "USD",
+  };
+}
+
+/**
+ * @deprecated Use {@link pricePerVisit} instead. quoteRange is a thin compat
+ * shim over pricePerVisit returning a degenerate range (low === high === perVisit).
+ * The old yard-size / range-band / cleanup-surcharge logic moved out — cleanup
+ * is now a separately quoted add-on through priceCart, not folded into the band.
+ */
 export function quoteRange(c: PricingCase): PriceRange {
-  const assumptions: string[] = [];
-
-  const visit = PER_VISIT[c.yard_size_bucket]?.[c.frequency];
-  if (!visit) {
-    return {
-      low: 0, high: 0, currency: "USD", assumptions: ["case outside rubric coverage"],
-      confidence: 0, covered: false,
-    };
-  }
-
-  let [low, high] = visit;
-  assumptions.push(
-    `${c.yard_size_bucket} yard, ${c.frequency} recurring maintenance (SF premium tier)`,
-    `per-visit range; final price needs on-site review`
-  );
-
-  // Overdue first cut
-  if (c.weeks_overdue && c.weeks_overdue >= 6) {
-    const [cl, ch] = CLEANUP[c.yard_size_bucket];
-    assumptions.push(`6+ weeks overdue → first service repriced as initial cleanup`);
-    return {
-      low: cl, high: ch, currency: "USD",
-      assumptions, confidence: 0.55, covered: true,
-    };
-  }
-  const [sl, sh] = firstCutSurcharge(c.weeks_overdue);
-  if (sl > 0) {
-    low += sl; high += sh;
-    assumptions.push(`+$${sl}-$${sh} first-cut surcharge (${c.weeks_overdue} wks overdue)`);
-  }
-
-  // Cleanup-required adds a one-time line (quoted separately, never "included")
-  if (c.cleanup_required) {
-    const [cl, ch] = CLEANUP[c.yard_size_bucket];
-    assumptions.push(
-      `initial cleanup required BEFORE recurring — separate one-time line $${cl}-$${ch}`
-    );
-  }
-
-  // Minimum service floor
-  if (high < MIN_SERVICE[0]) {
-    assumptions.push(`min service charge $${MIN_SERVICE[0]}-$${MIN_SERVICE[1]}/visit applies`);
-    low = Math.max(low, MIN_SERVICE[0]);
-    high = Math.max(high, MIN_SERVICE[1]);
-  }
-
-  // Confidence: full inputs → high; missing size/overdue signals → lower
-  const confidence = c.cleanup_required === undefined ? 0.7 : 0.85;
-
-  return { low, high, currency: "USD", assumptions, confidence, covered: true };
+  const r = pricePerVisit({
+    measured_area_sqft: c.measured_area_sqft,
+    slope_tier: c.slope_tier,
+    frequency: c.frequency,
+  });
+  return {
+    low: r.perVisit,
+    high: r.perVisit,
+    currency: r.currency,
+    assumptions: r.assumptions,
+    confidence: 0.85,
+    covered: true,
+  };
 }
 
 // Cart pricing — pure (tier, frequency, add-ons) → PricingResult.

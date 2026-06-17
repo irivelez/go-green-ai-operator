@@ -7,6 +7,7 @@ import {
   tool_score_lead, tool_quote_range, tool_book_evaluation,
   tool_create_work_order, tool_raise_escalation, checkEscalation, visionFallback,
 } from "./tools";
+import { yardSizeToSqft } from "./pricing";
 
 // Hermetic: start from a clean store every run (no cross-run state bleed).
 resetStore([]);
@@ -31,11 +32,12 @@ console.log("\n=== Scenario 1: happy A-lead (medium yard, biweekly, SF 94110) ==
   ok("in service area", scored.geo.in_area, scored.geo.zone ?? "");
 
   const range = tool_quote_range({
-    yard_size_bucket: vision.yard_size_estimate, frequency: "biweekly",
+    measured_area_sqft: yardSizeToSqft(vision.yard_size_estimate),
+    slope_tier: "flat", frequency: "biweekly",
     cleanup_required: vision.cleanup_required,
   });
   ok("range covered", range.covered, `$${range.low}-$${range.high}`);
-  ok("range is a band, not a point", range.high > range.low);
+  ok("range is exact (compat shim returns point)", range.high === range.low);
 
   upsertLead({ lead_id: "L1", channel: "telegram", lead_score: "A", zone: scored.geo.zone,
     suggested_package: "signature", price_range: { low: range.low, high: range.high } });

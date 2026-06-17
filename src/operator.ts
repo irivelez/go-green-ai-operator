@@ -5,7 +5,7 @@
 // templates. Pricing is NEVER an LLM guess (spec §9.1).
 
 import { geoQualify } from "./qualify";
-import { quoteRange, type Frequency, type YardSize, type PackageTier } from "./pricing";
+import { quoteRange, yardSizeToSqft, type Frequency, type YardSize, type PackageTier } from "./pricing";
 import { checkEscalation } from "./escalation";
 import { upsertLead, getLead, type Lead } from "./store";
 import { SYSTEM_PROMPT } from "./prompt";
@@ -215,7 +215,8 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const vision: YardAssessment = (lead.vision_assessment as unknown as YardAssessment) ?? visionFallback();
   const size = inferYardSize(text, vision.yard_size_estimate);
   const range = quoteRange({
-    yard_size_bucket: size,
+    measured_area_sqft: yardSizeToSqft(size),
+    slope_tier: "flat",
     frequency: lead.desired_frequency as Frequency,
     cleanup_required: vision.cleanup_required,
   });

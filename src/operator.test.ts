@@ -66,7 +66,7 @@ async function main() {
     has_photo: true,
   });
   ok("offered slots", r1.decision.intent === "offer_slots", r1.decision.stage);
-  ok("priced a real band", !!r1.decision.price_range && r1.decision.price_range.high > r1.decision.price_range.low, JSON.stringify(r1.decision.price_range));
+  ok("priced an exact per-visit point (T5 compat shim)", !!r1.decision.price_range && r1.decision.price_range.high === r1.decision.price_range.low && r1.decision.price_range.low > 0, JSON.stringify(r1.decision.price_range));
   ok("reply mentions a range", /\$\d+/.test(r1.reply));
 
   const r2 = await runOperator({ lead_id: "C1", channel: "telegram", text: "the first one works" });
