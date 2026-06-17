@@ -177,7 +177,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
             key={key}
             lang={language}
             lines={[
-              `yard ${v.yard_size_estimate} · condition ${v.condition_score}/10`,
+              `slope ${v.slope_signals?.steepness_hint ?? "unknown"} · condition ${v.condition_score}/10`,
               `cleanup ${v.cleanup_required ? "recommended" : "not needed"}`,
               `suggested tier: ${v.recommended_tier}`,
               `confidence ${(v.confidence * 100).toFixed(0)}%`,

@@ -129,7 +129,7 @@ const OUT_OF_AREA_ADDR = "1 Castro St, Mountain View, CA 94041";
 const SEED_PHOTO = "data:image/png;base64,QQ==";
 
 const SEED_VISION: Record<string, unknown> = {
-  yard_size_estimate: "medium",
+  slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
   condition_score: 7,
   overgrowth: "low",
   weeds: "low",

@@ -58,7 +58,7 @@ export function TierRecommendStep({
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <Stat
             label={tt.assessment.size}
-            value={assessment.yard_size_estimate}
+            value={assessment.slope_signals.steepness_hint}
           />
           <Stat
             label={tt.assessment.condition}

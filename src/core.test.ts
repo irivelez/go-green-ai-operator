@@ -32,7 +32,7 @@ console.log("\n=== Scenario 1: happy A-lead (medium yard, biweekly, SF 94110) ==
   ok("in service area", scored.geo.in_area, scored.geo.zone ?? "");
 
   const range = tool_quote_range({
-    measured_area_sqft: yardSizeToSqft(vision.yard_size_estimate),
+    measured_area_sqft: yardSizeToSqft("medium"),
     slope_tier: "flat", frequency: "biweekly",
     cleanup_required: vision.cleanup_required,
   });

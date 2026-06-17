@@ -213,7 +213,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
 
   // 4) Complete A-lead → vision + price + recommend, then book or offer slots.
   const vision: YardAssessment = (lead.vision_assessment as unknown as YardAssessment) ?? visionFallback();
-  const size = inferYardSize(text, vision.yard_size_estimate);
+  const size = inferYardSize(text, "medium");
   const range = quoteRange({
     measured_area_sqft: yardSizeToSqft(size),
     slope_tier: "flat",

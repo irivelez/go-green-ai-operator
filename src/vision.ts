@@ -35,12 +35,16 @@ const ADDON_ID_SET = new Set<string>(ADDON_IDS);
 // Zod schema mirrors VisionAssessment exactly. Rejects hallucinated add-on ids
 // and out-of-set tier values.
 // ─────────────────────────────────────────────────────────────────────────────
-const YardSizeSchema = z.enum(["small", "medium", "large"]);
 const IntensitySchema = z.enum(["low", "medium", "high"]);
 const TierSchema = z.enum(["essential", "signature", "estate"]);
 
-const VisionAssessmentSchema = z.object({
-  yard_size_estimate: YardSizeSchema,
+export const VisionAssessmentSchema = z.object({
+  slope_signals: z.object({
+    stairs_visible: z.boolean(),
+    retaining_wall_visible: z.boolean(),
+    terraces_visible: z.boolean(),
+    steepness_hint: z.enum(["none", "moderate", "steep"]),
+  }),
   condition_score: z.number().min(0).max(10),
   overgrowth: IntensitySchema,
   weeds: IntensitySchema,
@@ -77,7 +81,7 @@ Your ONLY job: look at the customer's yard photo(s) and return a single strict-J
 
 # What you must judge from the photos
 
-- yard_size_estimate: "small" | "medium" | "large" — relative residential SF lot size.
+- slope_signals: report ONLY what is VISIBLE in the photos. Slope signals can only RAISE the slope tier downstream, never lower it — report honestly what you see (stairs, retaining walls, terraces). steepness_hint: none|moderate|steep.
 - condition_score: integer 0–10 — overall maintained-ness (0 = abandoned, 10 = magazine-cover).
 - overgrowth, weeds, leaf_litter: "low" | "medium" | "high" intensity.
 - cleanup_required: true iff the yard needs a one-time cleanup BEFORE recurring service makes sense.
@@ -100,7 +104,12 @@ essential, signature, estate
 Return EXACTLY one JSON object, no code fences, no commentary. Shape:
 
 {
-  "yard_size_estimate": "small" | "medium" | "large",
+  "slope_signals": {
+    "stairs_visible": <boolean>,
+    "retaining_wall_visible": <boolean>,
+    "terraces_visible": <boolean>,
+    "steepness_hint": "none" | "moderate" | "steep"
+  },
   "condition_score": <number 0-10>,
   "overgrowth": "low" | "medium" | "high",
   "weeds": "low" | "medium" | "high",
@@ -119,7 +128,12 @@ Return EXACTLY one JSON object, no code fences, no commentary. Shape:
 // ─────────────────────────────────────────────────────────────────────────────
 function lowConfidenceAssessment(reason: string): VisionAssessment {
   return {
-    yard_size_estimate: "medium",
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "none",
+    },
     condition_score: 5,
     overgrowth: "medium",
     weeds: "medium",

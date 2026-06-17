@@ -20,7 +20,7 @@ const Body = z.object({
 const NEGLECTED: VisionAssessment = {
   recommended_tier: "signature",
   confidence: 0.82,
-  yard_size_estimate: "medium",
+  slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
   condition_score: 3,
   overgrowth: "high",
   weeds: "high",
@@ -34,7 +34,7 @@ const NEGLECTED: VisionAssessment = {
 const LOW_CONFIDENCE: VisionAssessment = {
   recommended_tier: "signature",
   confidence: 0.3,
-  yard_size_estimate: "medium",
+  slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
   condition_score: 5,
   overgrowth: "medium",
   weeds: "medium",
