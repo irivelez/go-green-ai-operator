@@ -11,69 +11,15 @@
 // tool result as an interactive React component (generative UI).
 
 import { NextRequest } from "next/server";
-import { z } from "zod";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, convertToCoreMessages, type Message } from "ai";
-import { FUNNEL_SYSTEM_PROMPT } from "@/src/funnel-prompt";
 import { buildTools, type ToolContext } from "@/src/agent-tools";
 import { upsertLead, getLead } from "@/src/store";
-import type { VisionAssessment } from "@/src/contract";
+import { Body, agentSystemPrompt } from "@/src/funnel-agent-prompt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const Body = z.object({
-  messages: z.array(z.any()).default([]),
-  leadId: z.string().min(1),
-  language: z.enum(["en", "es"]).default("en"),
-  photos: z.array(z.string()).optional(),
-  address: z.string().optional(),
-});
-
-function agentSystemPrompt(lang: "en" | "es", lead: ReturnType<typeof getLead>): string {
-  const langName = lang === "es" ? "Spanish" : "English";
-  const ctxLines: string[] = [];
-  if (lead?.address) ctxLines.push(`Service address on file: ${lead.address}.`);
-  ctxLines.push(`Photos on file: ${lead?.photos?.length ?? 0}.`);
-  if (lead?.lead_score) ctxLines.push(`Lead score: ${lead.lead_score} (risk ${lead.risk_level ?? "?"}).`);
-  if (lead?.desired_frequency) ctxLines.push(`Frequency: ${lead.desired_frequency}.`);
-  const vision = lead?.vision_assessment as unknown as VisionAssessment | undefined;
-  if (vision && typeof vision.confidence === "number") {
-    ctxLines.push(
-      `Vision: ${vision.recommended_tier} recommended, condition ${vision.condition_score}/10, cleanup ${vision.cleanup_required ? "required" : "not required"}, confidence ${vision.confidence}.`,
-    );
-  }
-
-  return `${FUNNEL_SYSTEM_PROMPT}
-
-# THIS SURFACE — the live agent (OVERRIDES the "emit JSON" output contract above)
-You ARE the booking experience. There is no separate form — you guide the entire flow
-yourself. You HAVE real function-calling tools; USE them. Do NOT emit JSON or tool objects
-as text, and never reveal tool names to the customer.
-
-Reply to the customer in ${langName}, mirroring their language. Keep messages warm, short,
-and end on ONE clear next step. Ask for at most ONE missing thing per turn.
-
-# How to drive the flow (call tools — never quote a number yourself)
-1. Understand the need from what they say.
-2. When you have an address, call qualify_lead. If it returns escalate=true (out of area,
-   non-residential), call raise_escalation and stop collecting.
-3. When photos are on file, call analyze_photos to assess the yard.
-4. Call recommend_tier to propose ONE tier (the UI shows the option cards).
-5. When the customer has confirmed a tier + frequency (+ any add-ons), call compute_pricing
-   to show the exact price. NEVER state a price the tool didn't return.
-6. When tier + frequency + address + photos + identity (name, email) are all present, call
-   propose_checkout. This stages a secure payment link — you do NOT charge anyone.
-7. ONLY after payment is confirmed, call offer_slots, then confirm_booking for the chosen slot.
-8. For anything outside a clean standard-residential case (HOA, commercial, property manager,
-   complaint, refund/discount, legal, damage, hardscape/large install, out-of-area, extreme
-   urgency, an open-ended add-on, contradictory scope, unusable photos), call raise_escalation
-   with a complete brief and stop — a human takes over and nothing is charged.
-
-# Current customer context
-${ctxLines.join("\n")}`;
-}
 
 function devFallbackStream(lang: "en" | "es"): Response {
   const msg =
@@ -108,7 +54,7 @@ export async function POST(req: NextRequest) {
       headers: { "content-type": "application/json" },
     });
   }
-  const { messages, leadId, language, photos, address } = parsed.data;
+  const { messages, leadId, language, photos, address, intent } = parsed.data;
 
   // PRODUCTION GUARD: no silent keyword fallback in prod. A deployed agent with no key
   // is a defect, not a degraded mode — fail loudly so it's caught, never shipped dumb.
@@ -137,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   const result = streamText({
     model: anthropic(model),
-    system: agentSystemPrompt(language, getLead(leadId)),
+    system: agentSystemPrompt(language, getLead(leadId), intent),
     messages: convertToCoreMessages(messages as Message[]),
     tools: buildTools(ctx),
     maxSteps: 8,
