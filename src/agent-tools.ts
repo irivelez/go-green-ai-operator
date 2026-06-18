@@ -422,7 +422,8 @@ export function runConfirmArea(
     slope_signals?: { steepness_hint?: string };
   };
   const hint = vision.slope_signals?.steepness_hint;
-  if (hint === "steep" && (slope_tier === "flat" || slope_tier === "moderate")) {
+  const alreadyRaised = slope_source === "photo_raised";
+  if (hint === "steep" && !alreadyRaised && (slope_tier === "flat" || slope_tier === "moderate")) {
     slope_tier = SLOPE_RAISE[slope_tier];
     slope_source = "photo_raised";
   }

@@ -230,6 +230,12 @@ console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises 
   ok("slope_tier raised flat → moderate", r.slope_tier === "moderate", `got ${r.slope_tier}`);
   ok("slope_source 'photo_raised'", r.slope_source === "photo_raised", `got ${r.slope_source}`);
   ok("persisted to lead", getLead("L9")?.slope_tier === "moderate" && getLead("L9")?.slope_source === "photo_raised");
+
+  // A second confirm (customer redraws) must NOT raise the tier AGAIN — the photo
+  // hint already applied once. Re-raising moderate→steep on every re-confirm is a bug.
+  const r2 = runConfirmArea(ctx("L9"), { path });
+  ok("second confirm does NOT double-raise (stays moderate)", r2.slope_tier === "moderate", `got ${r2.slope_tier}`);
+  ok("slope_source stays photo_raised", r2.slope_source === "photo_raised", `got ${r2.slope_source}`);
 }
 
 console.log("\n=== T10.d: compute_exact_price — missing confirmed_sqft → structured refusal ===");
