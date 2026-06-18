@@ -13,6 +13,7 @@
 // For override, additionally:
 //   { field: "area"|"slope"|"address"|"price"|"decision" }
 
+import { z } from "zod";
 import { getLead, upsertLead, appendEvent, type Lead, type LeadEvent } from "./store";
 import { tool_book_evaluation, tool_create_work_order } from "./tools";
 import { nextSlots } from "./operator";
@@ -24,9 +25,35 @@ export interface OwnerActionBody {
 
 export interface OverrideBody {
   field: "area" | "slope" | "address" | "price" | "decision";
-  corrected_value: unknown;
+  corrected_value?: unknown;
   reason_code: string;
 }
+
+// Bounded zod schemas for the unauthenticated /api/leads/* routes. The
+// handlers below stay loose (corrected_value: unknown) so internal/agent
+// callers keep working, but at the HTTP boundary an attacker-supplied body
+// MUST round-trip through these schemas — otherwise an oversized reason_code
+// or corrected_value blows up lead.events into an OOM. Tenant isolation is
+// still the documented KNOWN GAP (AGENTS.md §1); the input cap is the
+// stopgap that makes the gap survivable.
+const correctedValueSchema = z
+  .union([z.string().max(2000), z.number(), z.boolean(), z.null()])
+  .optional();
+
+export const OwnerActionSchema = z
+  .object({
+    reason_code: z.string().max(200).optional(),
+    corrected_value: correctedValueSchema,
+  })
+  .strict();
+
+export const OverrideSchema = z
+  .object({
+    field: z.enum(["area", "slope", "address", "price", "decision"]),
+    reason_code: z.string().max(200),
+    corrected_value: correctedValueSchema,
+  })
+  .strict();
 
 export interface HandlerResult {
   ok: boolean;

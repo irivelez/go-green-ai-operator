@@ -424,12 +424,27 @@ export async function runMeasureProperty(
 // confirm_area — server re-derives sqft from polygon path; raises slope on photo hint
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ConfirmAreaResult {
-  confirmed_sqft: number;
-  area_source: "auto" | "customer_draw";
-  slope_tier: "flat" | "moderate" | "steep";
-  slope_source: "elevation" | "photo_raised";
-}
+// Plausibility ceiling for a residential lot in SF — 60000 sqft ≈ 1.4 acres,
+// well above any single-family parcel. Above this the polygon is either a
+// drawing mistake or an attempt to trick a downstream area×price calc into a
+// huge subscription. Below or equal to 0 is a degenerate ring. Either case →
+// refuse to persist, ask the customer to redraw. The deterministic engine
+// (priceCart / pricePerVisit) never sees the bad number.
+const MAX_RESIDENTIAL_SQFT = 60000;
+
+export type ConfirmAreaResult =
+  | {
+      status: "confirmed";
+      confirmed_sqft: number;
+      area_source: "auto" | "customer_draw";
+      slope_tier: "flat" | "moderate" | "steep";
+      slope_source: "elevation" | "photo_raised";
+    }
+  | {
+      status: "area_out_of_range";
+      confirmed_sqft: number;
+      message: string;
+    };
 
 const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
   flat: "moderate",
@@ -441,8 +456,20 @@ export function runConfirmArea(
   args: { path: { lat: number; lng: number }[] },
 ): ConfirmAreaResult {
   const confirmed_sqft = computePolygonSqft(args.path);
-  const area_source: "auto" | "customer_draw" = args.path.length > 5 ? "customer_draw" : "auto";
   const existing = getLead(ctx.leadId);
+
+  if (confirmed_sqft <= 0 || confirmed_sqft > MAX_RESIDENTIAL_SQFT) {
+    return {
+      status: "area_out_of_range",
+      confirmed_sqft,
+      message:
+        confirmed_sqft <= 0
+          ? "The polygon you drew is empty — please re-draw the maintained area."
+          : `The polygon you drew is ${confirmed_sqft.toLocaleString()} sqft, which is well above any SF residential lot. Please re-draw just the maintained area.`,
+    };
+  }
+
+  const area_source: "auto" | "customer_draw" = args.path.length > 5 ? "customer_draw" : "auto";
 
   let slope_tier: "flat" | "moderate" | "steep" = existing?.slope_tier ?? "flat";
   let slope_source: "elevation" | "photo_raised" = existing?.slope_source ?? "elevation";
@@ -467,7 +494,7 @@ export function runConfirmArea(
     slope_source,
   });
 
-  return { confirmed_sqft, area_source, slope_tier, slope_source };
+  return { status: "confirmed", confirmed_sqft, area_source, slope_tier, slope_source };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
 // Run: npx tsx src/hitl.test.ts
 
 import { upsertLead, resetStore, listEvents, getLead, type Lead } from "./store";
-import { handleApprove, handleReject, handleOverride } from "./hitl";
+import { handleApprove, handleReject, handleOverride, OwnerActionSchema, OverrideSchema } from "./hitl";
 
 resetStore([]);
 
@@ -127,6 +127,67 @@ console.log("\n=== handleOverride: bad field → error, no event ===");
   const res = handleOverride("L_O5", { field: "evil", corrected_value: 1, reason_code: "other" });
   ok("rejected", !res.ok && !!res.error, res.error ?? "");
   ok("no event written", listEvents("L_O5").length === 0);
+}
+
+console.log("\n=== SEC-B: OwnerActionSchema — bounded inputs for unauthenticated approve/reject ===");
+{
+  const okEmpty = OwnerActionSchema.safeParse({});
+  ok("empty body accepted (back-compat)", okEmpty.success);
+
+  const okValid = OwnerActionSchema.safeParse({ reason_code: "area_wrong", corrected_value: 4200 });
+  ok("valid {reason_code, number corrected_value} accepted", okValid.success);
+
+  const okString = OwnerActionSchema.safeParse({ corrected_value: "out of area" });
+  ok("string corrected_value accepted", okString.success);
+
+  const okNull = OwnerActionSchema.safeParse({ corrected_value: null });
+  ok("null corrected_value accepted", okNull.success);
+
+  const bigReason = "x".repeat(201);
+  const failReason = OwnerActionSchema.safeParse({ reason_code: bigReason });
+  ok("reason_code > 200 chars rejected", !failReason.success,
+    failReason.success ? "WRONGLY accepted" : "");
+
+  const bigVal = "x".repeat(2001);
+  const failVal = OwnerActionSchema.safeParse({ corrected_value: bigVal });
+  ok("corrected_value string > 2000 chars rejected", !failVal.success);
+
+  const failObj = OwnerActionSchema.safeParse({ corrected_value: { a: 1, b: 2 } });
+  ok("object corrected_value rejected (no unbounded shapes)", !failObj.success);
+
+  const failExtra = OwnerActionSchema.safeParse({ reason_code: "ok", evil: "extra" });
+  ok("extra keys rejected (.strict)", !failExtra.success);
+}
+
+console.log("\n=== SEC-B: OverrideSchema — same bounds + required field/reason_code ===");
+{
+  const okValid = OverrideSchema.safeParse({
+    field: "area", reason_code: "area_wrong", corrected_value: 4500,
+  });
+  ok("valid override accepted", okValid.success, okValid.success ? "" : okValid.error.message);
+
+  const failField = OverrideSchema.safeParse({
+    field: "evil", reason_code: "x", corrected_value: 1,
+  });
+  ok("bad field rejected at schema level", !failField.success);
+
+  const failMissingReason = OverrideSchema.safeParse({ field: "area", corrected_value: 1 });
+  ok("missing reason_code rejected (required)", !failMissingReason.success);
+
+  const bigReason = OverrideSchema.safeParse({
+    field: "area", reason_code: "x".repeat(201), corrected_value: 1,
+  });
+  ok("override reason_code > 200 chars rejected", !bigReason.success);
+
+  const failExtra = OverrideSchema.safeParse({
+    field: "area", reason_code: "ok", corrected_value: 1, evil: true,
+  });
+  ok("override extra keys rejected (.strict)", !failExtra.success);
+
+  const failObjVal = OverrideSchema.safeParse({
+    field: "price", reason_code: "x", corrected_value: { low: 1, high: 2 },
+  });
+  ok("object corrected_value rejected on override", !failObjVal.success);
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

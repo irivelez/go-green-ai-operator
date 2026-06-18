@@ -2,7 +2,7 @@
 // Run: npx tsx src/vision.test.ts
 // No external keys needed — tests the Zod schema only via __test__ export.
 
-import { analyzeYardPhotos, __test__ } from "./vision";
+import { analyzeYardPhotos, isAllowedPhoto, __test__ } from "./vision";
 import { ADD_ON_CATALOG } from "./contract";
 
 const { VisionAssessmentSchema } = __test__;
@@ -140,6 +140,31 @@ console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_si
     __test__.extractJsonObject(fenced).trim() === '{"a":1}');
 }
 
+console.log("\n=== SEC-C: isAllowedPhoto — only base64 image data: URIs reach the model ===");
+{
+  ok("data:image/png;base64,QQ== accepted",
+    isAllowedPhoto("data:image/png;base64,QQ==") === true);
+  ok("data:image/jpeg;base64,QQ== accepted",
+    isAllowedPhoto("data:image/jpeg;base64,QQ==") === true);
+  ok("data:image/webp;base64,QQ== accepted",
+    isAllowedPhoto("data:image/webp;base64,QQ==") === true);
+  ok("data:image/gif;base64,QQ== accepted",
+    isAllowedPhoto("data:image/gif;base64,QQ==") === true);
+
+  ok("http://169.254.169.254/ rejected (SSRF)",
+    isAllowedPhoto("http://169.254.169.254/") === false);
+  ok("https://evil.com/x.png rejected (exfil)",
+    isAllowedPhoto("https://evil.com/x.png") === false);
+  ok("data:text/html;base64,.. rejected (non-image mime)",
+    isAllowedPhoto("data:text/html;base64,QQ==") === false);
+  ok("data:image/svg+xml;base64,.. rejected (SVG → JS exec)",
+    isAllowedPhoto("data:image/svg+xml;base64,QQ==") === false);
+  ok("data:image/png URL without base64 marker rejected",
+    isAllowedPhoto("data:image/png,QQ==") === false);
+  ok("empty string rejected", isAllowedPhoto("") === false);
+  ok("file:///etc/passwd rejected", isAllowedPhoto("file:///etc/passwd") === false);
+}
+
 async function main() {
   // (j) Sentinel: empty URL list returns confidence 0 (regression — no key needed)
   {
@@ -148,6 +173,18 @@ async function main() {
     ok("sentinel has slope_signals", "slope_signals" in empty, JSON.stringify(empty));
     ok("sentinel slope_signals.steepness_hint is 'none'",
       (empty as { slope_signals?: { steepness_hint?: string } }).slope_signals?.steepness_hint === "none");
+  }
+
+  // (k) SEC-C regression: analyzeYardPhotos drops disallowed URLs BEFORE the
+  // Anthropic call. With ONLY a remote URL and no key, the sentinel still
+  // reports "no photos provided" (urls filtered to empty) — proving the
+  // remote URL never reached the network path.
+  {
+    delete process.env.ANTHROPIC_API_KEY;
+    const remoteOnly = await analyzeYardPhotos(["https://evil.com/x.png"]);
+    ok("remote URL filtered out → sentinel 'no photos provided'",
+      remoteOnly.confidence === 0 && (remoteOnly.notes ?? "").includes("no photos"),
+      `got notes=${remoteOnly.notes}`);
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

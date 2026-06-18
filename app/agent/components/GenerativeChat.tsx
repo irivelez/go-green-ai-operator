@@ -4,7 +4,7 @@
 // text AND calls tools; each tool result renders as an interactive card (generative UI).
 // This replaces the old form-wizard + defanged-sidebar split.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
@@ -127,8 +127,12 @@ function textOf(m: Message): string {
 }
 
 export function GenerativeChat({ language }: { language: Lang }) {
-  const reactId = useId();
-  const leadIdRef = useRef<string>(`web-${reactId.replace(/[^a-zA-Z0-9]/g, "")}-${Date.now().toString(36)}`);
+  // Unguessable lead id (122-bit entropy). The leads/* routes are still
+  // unauthenticated (tenant isolation is the documented KNOWN GAP, AGENTS.md
+  // §1) — an enumerable id (useId + Date.now) would let an attacker walk every
+  // in-flight lead. Until owner-session authz lands, the id itself is the
+  // only thing keeping a stranger out of someone else's funnel.
+  const leadIdRef = useRef<string>(`web-${crypto.randomUUID()}`);
   const [photos, setPhotos] = useState<string[]>([]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -299,7 +303,11 @@ export function GenerativeChat({ language }: { language: Lang }) {
                 });
                 if (!resp.ok) throw new Error(`confirm-area HTTP ${resp.status}`);
                 const data = (await resp.json()) as ConfirmAreaResult;
-                send(c.areaConfirmedMessage(data.confirmed_sqft));
+                if (data.status === "area_out_of_range") {
+                  send(data.message);
+                } else {
+                  send(c.areaConfirmedMessage(data.confirmed_sqft));
+                }
               } catch (err) {
                 // Surface a soft retry hint into the chat — never silent.
                 // eslint-disable-next-line no-console
@@ -312,6 +320,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
       }
       case "confirm_area": {
         const r = res as ConfirmAreaResult;
+        if (r.status === "area_out_of_range") return null;
         return (
           <div
             key={key}

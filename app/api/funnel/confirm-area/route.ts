@@ -21,7 +21,8 @@ const Body = z.object({
   language: z.enum(["en", "es"]).default("en"),
   path: z
     .array(z.object({ lat: z.number(), lng: z.number() }))
-    .min(3, "polygon needs at least 3 points"),
+    .min(3, "polygon needs at least 3 points")
+    .max(500, "polygon too complex"),
 });
 
 export async function POST(req: NextRequest) {

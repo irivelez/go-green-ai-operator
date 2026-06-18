@@ -16,6 +16,7 @@ import { streamText, convertToCoreMessages, type Message } from "ai";
 import { buildTools, type ToolContext } from "@/src/agent-tools";
 import { upsertLead, getLead } from "@/src/store";
 import { Body, agentSystemPrompt } from "@/src/funnel-agent-prompt";
+import { isAllowedPhoto } from "@/src/vision";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,13 +70,23 @@ export async function POST(req: NextRequest) {
   }
 
   // Seed the lead so gates (address/photos) and analyze_photos work off real state.
+  // Photos arriving from the request body are untrusted (AGENTS.md §6, Rule of
+  // Two). Drop anything that isn't a base64 image data: URI BEFORE we persist —
+  // a remote URL on a lead would later be forwarded to Anthropic as an image
+  // source (SSRF / exfil). The funnel client only ever uploads data URIs anyway.
   const existing = getLead(leadId);
+  const safePhotos = photos ? photos.filter(isAllowedPhoto) : undefined;
+  if (photos && safePhotos && safePhotos.length !== photos.length) {
+    console.warn(
+      `[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`,
+    );
+  }
   upsertLead({
     lead_id: leadId,
     channel: existing?.channel ?? "form",
     language,
     address: address ?? existing?.address,
-    photos: photos ?? existing?.photos ?? [],
+    photos: safePhotos ?? existing?.photos ?? [],
   });
 
   const ctx: ToolContext = { leadId, language };

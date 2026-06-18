@@ -161,11 +161,28 @@ function extractJsonObject(text: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Photo allow-list: only base64-encoded image data: URIs reach the model.
+//
+// The funnel ONLY ever uploads base64 data URIs (GenerativeChat's FileReader →
+// readAsDataURL). Anything else on the `photos` array is attacker-controlled —
+// a prompt-injected http URL passed straight to Anthropic as a remote URL
+// (SSRF probe to 169.254.169.254 or exfil to evil.com) was the original
+// review finding. SVG is rejected even though it's an image/* mime, because
+// SVG can execute JS in a rendering context. Anchors AGENTS.md §6 Rule of Two.
+// ─────────────────────────────────────────────────────────────────────────────
+const ALLOWED_PHOTO_RE = /^data:image\/(jpeg|png|webp|gif);base64,/;
+
+export function isAllowedPhoto(url: string): boolean {
+  return typeof url === "string" && ALLOWED_PHOTO_RE.test(url);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function analyzeYardPhotos(urls: string[]): Promise<VisionAssessment> {
-  if (!urls || urls.length === 0) {
+  const safeUrls = (urls ?? []).filter(isAllowedPhoto);
+  if (safeUrls.length === 0) {
     return lowConfidenceAssessment("no photos provided");
   }
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -175,20 +192,17 @@ export async function analyzeYardPhotos(urls: string[]): Promise<VisionAssessmen
   const client = new Anthropic();
   const model = getVisionModel();
 
-  const imageBlocks = urls.map((url) => {
-    // data:<mediaType>;base64,<data> → base64 source; otherwise a remote URL.
-    const m = url.match(/^data:([^;]+);base64,(.+)$/s);
-    if (m) {
-      return {
-        type: "image" as const,
-        source: {
-          type: "base64" as const,
-          media_type: m[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-          data: m[2]!,
-        },
-      };
-    }
-    return { type: "image" as const, source: { type: "url" as const, url } };
+  const imageBlocks = safeUrls.map((url) => {
+    // Allow-list above guarantees this match: data:image/<jpeg|png|webp|gif>;base64,<data>
+    const m = url.match(/^data:([^;]+);base64,(.+)$/s)!;
+    return {
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: m[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+        data: m[2]!,
+      },
+    };
   });
 
   const userContent: Anthropic.ContentBlockParam[] = [
@@ -196,9 +210,9 @@ export async function analyzeYardPhotos(urls: string[]): Promise<VisionAssessmen
     {
       type: "text" as const,
       text:
-        urls.length === 1
+        safeUrls.length === 1
           ? "Assess this yard photo. Return JSON only."
-          : `Assess these ${urls.length} yard photos (same property). Return one combined JSON only.`,
+          : `Assess these ${safeUrls.length} yard photos (same property). Return one combined JSON only.`,
     },
   ];
 

@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleReject, type OwnerActionBody } from "@/src/hitl";
+import { handleReject, OwnerActionSchema } from "@/src/hitl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as OwnerActionBody;
-  const result = handleReject(id, body ?? {});
+  const json = await req.json().catch(() => ({}));
+  const parsed = OwnerActionSchema.safeParse(json ?? {});
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid body", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const result = handleReject(id, parsed.data);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ lead: result.lead });
 }

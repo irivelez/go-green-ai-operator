@@ -76,6 +76,16 @@ export async function createCrewEvent(
   const calendarId = getGoogleCalendarId();
   const userId = process.env.COMPOSIO_USER_ID || "default";
   if (!apiKey || !calendarId) return { ok: false, reason: "unconfigured" };
+  // SEC-E: explicit opt-in before customer PII reaches Google Calendar.
+  // The /api/leads/[id]/approve and funnel→confirm_booking paths are still
+  // unauthenticated (tenant isolation is the documented KNOWN GAP, AGENTS.md
+  // §1) — an attacker who guesses a lead id could trigger a calendar write
+  // with the customer's name + address. Default OFF mirrors the
+  // STRIPE_LIVE_OK pattern: irreversible/external side effects stay gated
+  // until owner-auth lands. Remove this gate at the same time as auth.
+  if (process.env.CREW_CALENDAR_ENABLED !== "1") {
+    return { ok: false, reason: "disabled" };
+  }
 
   const payload = buildCrewEventPayload(input);
 

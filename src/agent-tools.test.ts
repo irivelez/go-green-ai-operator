@@ -203,11 +203,14 @@ console.log("\n=== T10.b: confirm_area — re-derives sqft from path; client-sup
     { lat: 37.75,             lng: -122.42 + 0.001136 },
   ];
   const r = runConfirmArea(ctx("L8"), { path });
-  ok("re-derived confirmed_sqft ≈ 53820 (±200)", Math.abs(r.confirmed_sqft - 53820) < 200, `got ${r.confirmed_sqft}`);
-  ok("area_confirmed_by_customer true on lead", getLead("L8")?.area_confirmed_by_customer === true);
-  ok("4-corner rect → area_source 'auto'", r.area_source === "auto", `got ${r.area_source}`);
-  // Even if a malicious LLM crammed in a different number, the path's own area math wins.
-  // We don't expose a "claimed sqft" input — there's literally nowhere to inject one.
+  ok("status confirmed", r.status === "confirmed", JSON.stringify(r));
+  if (r.status === "confirmed") {
+    ok("re-derived confirmed_sqft ≈ 53820 (±200)", Math.abs(r.confirmed_sqft - 53820) < 200, `got ${r.confirmed_sqft}`);
+    ok("area_confirmed_by_customer true on lead", getLead("L8")?.area_confirmed_by_customer === true);
+    ok("4-corner rect → area_source 'auto'", r.area_source === "auto", `got ${r.area_source}`);
+    // Even if a malicious LLM crammed in a different number, the path's own area math wins.
+    // We don't expose a "claimed sqft" input — there's literally nowhere to inject one.
+  }
 }
 
 console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises tier flat→moderate ===");
@@ -227,15 +230,44 @@ console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises 
     { lat: 37.75,             lng: -122.42 + 0.001136 },
   ];
   const r = runConfirmArea(ctx("L9"), { path });
-  ok("slope_tier raised flat → moderate", r.slope_tier === "moderate", `got ${r.slope_tier}`);
-  ok("slope_source 'photo_raised'", r.slope_source === "photo_raised", `got ${r.slope_source}`);
-  ok("persisted to lead", getLead("L9")?.slope_tier === "moderate" && getLead("L9")?.slope_source === "photo_raised");
+  ok("status confirmed", r.status === "confirmed");
+  if (r.status === "confirmed") {
+    ok("slope_tier raised flat → moderate", r.slope_tier === "moderate", `got ${r.slope_tier}`);
+    ok("slope_source 'photo_raised'", r.slope_source === "photo_raised", `got ${r.slope_source}`);
+    ok("persisted to lead", getLead("L9")?.slope_tier === "moderate" && getLead("L9")?.slope_source === "photo_raised");
+  }
 
   // A second confirm (customer redraws) must NOT raise the tier AGAIN — the photo
   // hint already applied once. Re-raising moderate→steep on every re-confirm is a bug.
   const r2 = runConfirmArea(ctx("L9"), { path });
-  ok("second confirm does NOT double-raise (stays moderate)", r2.slope_tier === "moderate", `got ${r2.slope_tier}`);
-  ok("slope_source stays photo_raised", r2.slope_source === "photo_raised", `got ${r2.slope_source}`);
+  if (r2.status === "confirmed") {
+    ok("second confirm does NOT double-raise (stays moderate)", r2.slope_tier === "moderate", `got ${r2.slope_tier}`);
+    ok("slope_source stays photo_raised", r2.slope_source === "photo_raised", `got ${r2.slope_source}`);
+  }
+}
+
+console.log("\n=== SEC-D: confirm_area — out-of-range polygon is refused, never persisted as confirmed ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L_SEC_D", channel: "form" });
+  // ~1000m × 2000m rectangle ≈ 21.5M sqft — well above 60000 sqft SF residential ceiling.
+  const huge = [
+    { lat: 37.75,           lng: -122.42 },
+    { lat: 37.75 + 0.00898, lng: -122.42 },               // ~1000m N
+    { lat: 37.75 + 0.00898, lng: -122.42 + 0.02272 },     // ~2000m E
+    { lat: 37.75,           lng: -122.42 + 0.02272 },
+  ];
+  const r = runConfirmArea(ctx("L_SEC_D"), { path: huge });
+  ok("out-of-range returns status 'area_out_of_range'",
+    r.status === "area_out_of_range", JSON.stringify(r).slice(0, 200));
+  ok("confirmed_sqft echoed for client feedback",
+    typeof r.confirmed_sqft === "number" && r.confirmed_sqft > 60000, `got ${r.confirmed_sqft}`);
+  const lead = getLead("L_SEC_D");
+  ok("lead NOT marked area_confirmed_by_customer",
+    lead?.area_confirmed_by_customer !== true, `got ${lead?.area_confirmed_by_customer}`);
+  ok("lead.confirmed_sqft NOT persisted from oversized polygon",
+    !lead?.confirmed_sqft || lead.confirmed_sqft <= 60000,
+    `got ${lead?.confirmed_sqft}`);
 }
 
 console.log("\n=== T10.d: compute_exact_price — missing confirmed_sqft → structured refusal ===");
