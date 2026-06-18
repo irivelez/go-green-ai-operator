@@ -262,6 +262,146 @@ console.log("\n=== T10.e: compute_exact_price — 2500 sqft + flat + biweekly ma
   }
 }
 
+console.log("\n=== T13: propose_checkout — charge == quote (measured area×slope, NOT flat PRICE_BOOK) — review blocker A ===");
+{
+  // The bug: ExactPriceCard quoted the customer the MEASURED price (pricePerVisit
+  // using confirmed_sqft + slope_tier), but Stripe was billing the flat
+  // PRICE_BOOK[tier].perVisit price — e.g. medium flat biweekly: $173/visit quoted
+  // → $375.41/mo, but $299×2.17=$648.83/mo charged. They MUST agree.
+  resetStore([]);
+  upsertLead({
+    lead_id: "L13",
+    channel: "form",
+    photos: ["data:image/png;base64,xx"],
+    confirmed_sqft: 2500,   // medium bucket
+    slope_tier: "flat",
+  });
+  const r = runProposeCheckout(ctx("L13"), {
+    tier: "signature",
+    frequency: "biweekly",
+    addOnIds: [],
+    name: "Jane",
+    email: "jane@example.com",
+    phone: "555",
+    address: "123 Main St, SF 94110",
+  });
+  const measured = pricePerVisit({
+    measured_area_sqft: 2500,
+    slope_tier: "flat",
+    frequency: "biweekly",
+  });
+  // measured.perVisit = 173; measured.monthly = 375.41
+  // legacy flat would have been monthlyFromVisit("signature","biweekly") = 648.83
+  ok(
+    "not a gate refusal",
+    r.status !== "missing_address" && r.status !== "missing_photos",
+    JSON.stringify(r),
+  );
+  ok(
+    `monthlyRecurring == MEASURED (${measured.monthly}) NOT flat 648.83`,
+    typeof r.monthlyRecurring === "number" && approxEq(r.monthlyRecurring, measured.monthly),
+    `got ${r.monthlyRecurring}`,
+  );
+  ok(
+    "amount (no add-ons) == measured monthly",
+    typeof r.amount === "number" && approxEq(r.amount, measured.monthly),
+    `got ${r.amount}`,
+  );
+  ok(
+    "measuredPerVisit surfaced for the Stripe call",
+    (r as { measuredPerVisit?: number }).measuredPerVisit === measured.perVisit,
+    `got ${(r as { measuredPerVisit?: number }).measuredPerVisit}`,
+  );
+
+  // Defence in depth: add fixed add-on still rides on TOP of the MEASURED monthly,
+  // never the flat one. Add fertilization ($95).
+  const r2 = runProposeCheckout(ctx("L13"), {
+    tier: "signature",
+    frequency: "biweekly",
+    addOnIds: ["fertilization"],
+    name: "Jane",
+    email: "jane@example.com",
+    phone: "555",
+    address: "123 Main St, SF 94110",
+  });
+  const expectedAmount = Math.round((measured.monthly + 95) * 100) / 100;
+  ok(
+    `amount = MEASURED monthly + $95 = ${expectedAmount}`,
+    typeof r2.amount === "number" && approxEq(r2.amount, expectedAmount),
+    `got ${r2.amount}`,
+  );
+  ok(
+    "monthlyRecurring still == MEASURED (add-on is one-time, not recurring)",
+    typeof r2.monthlyRecurring === "number" && approxEq(r2.monthlyRecurring, measured.monthly),
+    `got ${r2.monthlyRecurring}`,
+  );
+}
+
+console.log("\n=== T13.b: propose_checkout — legacy back-compat: no measurement → flat PRICE_BOOK path stays ===");
+{
+  // Existing callers without confirmed_sqft + slope_tier still get the legacy
+  // priceCart numbers — nothing else breaks. (operator.ts compat.)
+  resetStore([]);
+  upsertLead({
+    lead_id: "L13b",
+    channel: "form",
+    photos: ["data:image/png;base64,xx"],
+    // no confirmed_sqft, no slope_tier
+  });
+  const r = runProposeCheckout(ctx("L13b"), {
+    tier: "signature",
+    frequency: "biweekly",
+    addOnIds: [],
+    name: "Jane",
+    email: "jane@example.com",
+    phone: "555",
+    address: "123 Main St, SF 94110",
+  });
+  const flat = monthlyFromVisit("signature", "biweekly"); // 648.83
+  ok(
+    "monthlyRecurring falls back to flat 648.83",
+    typeof r.monthlyRecurring === "number" && approxEq(r.monthlyRecurring, flat),
+    `got ${r.monthlyRecurring}`,
+  );
+  ok(
+    "no measuredPerVisit surfaced (no measurement)",
+    (r as { measuredPerVisit?: number }).measuredPerVisit === undefined,
+    `got ${(r as { measuredPerVisit?: number }).measuredPerVisit}`,
+  );
+}
+
+console.log("\n=== T13.c: compute_exact_price — persists per_visit_price + monthly_price on the lead ===");
+{
+  // The whole system has to agree on the priced numbers. After compute_exact_price
+  // runs, the lead carries them so propose_checkout / dashboard / audit all read
+  // the same source of truth.
+  resetStore([]);
+  upsertLead({ lead_id: "L13c", channel: "form", confirmed_sqft: 2500, slope_tier: "flat" });
+  const r = runComputeExactPrice(ctx("L13c"), { tier: "signature", frequency: "biweekly" });
+  ok("status priced", r.status === "priced", JSON.stringify(r));
+  const lead = getLead("L13c");
+  ok(
+    "per_visit_price persisted (173)",
+    lead?.per_visit_price === 173,
+    `got ${lead?.per_visit_price}`,
+  );
+  ok(
+    "monthly_price persisted (375.41)",
+    typeof lead?.monthly_price === "number" && approxEq(lead.monthly_price, 375.41),
+    `got ${lead?.monthly_price}`,
+  );
+  ok(
+    "desired_frequency persisted",
+    lead?.desired_frequency === "biweekly",
+    `got ${lead?.desired_frequency}`,
+  );
+  ok(
+    "suggested_package persisted",
+    lead?.suggested_package === PRICE_BOOK.signature.name,
+    `got ${lead?.suggested_package}`,
+  );
+}
+
 console.log("\n=== T10.f: confirm_booking — calendar wire is fire-and-forget; booking still succeeds with no key ===");
 {
   resetStore([]);

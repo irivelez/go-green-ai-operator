@@ -66,11 +66,28 @@ function toCents(usd: number): number {
   return Math.round(usd * 100);
 }
 
-// Per-visit × freq multiplier, in integer cents.
-function monthlyCents(tier: Tier, frequency: Frequency): number {
-  const perVisit = PRICE_BOOK[tier].perVisit;
-  const monthly = perVisit * FREQUENCY_MULTIPLIER[frequency];
-  return toCents(monthly);
+// Recurring subscription unit_amount in cents.
+//
+// REVIEW BLOCKER A — the bug this branch closes: the funnel quoted the
+// MEASURED area×slope price (pricePerVisit using confirmed_sqft + slope_tier),
+// but Stripe was charging the flat PRICE_BOOK[tier].perVisit — customer quoted
+// $173/visit, billed $299/visit. With measuredPerVisit present, that wins;
+// without it, the legacy PRICE_BOOK[tier].perVisit fallback path is preserved
+// for back-compat (operator.ts + any legacy caller without a measurement).
+export function recurringUnitAmountCents(input: {
+  measuredPerVisit?: number;
+  tier?: Tier;
+  frequency: Frequency;
+}): number {
+  const perVisit =
+    input.measuredPerVisit ??
+    (input.tier !== undefined ? PRICE_BOOK[input.tier].perVisit : undefined);
+  if (perVisit === undefined) {
+    throw new Error(
+      "recurringUnitAmountCents: requires measuredPerVisit or tier",
+    );
+  }
+  return toCents(perVisit * FREQUENCY_MULTIPLIER[input.frequency]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +108,11 @@ export interface CreateCheckoutInput {
   customer: CheckoutCustomer;
   // Optional lead linkage — webhook uses this to mark the right lead paid.
   leadId?: string;
+  // Authoritative measured per-visit USD (area bucket × slope multiplier). When
+  // present, recurring unit_amount = measuredPerVisit × FREQUENCY_MULTIPLIER —
+  // SAME number the funnel quoted on ExactPriceCard (review blocker A). When
+  // absent, falls back to PRICE_BOOK[tier].perVisit so legacy callers stay safe.
+  measuredPerVisit?: number;
   successUrl?: string;
   cancelUrl?: string;
 }
@@ -135,7 +157,11 @@ export async function createSubscriptionCheckout(
 
   const stripe = getStripeClient();
   const tierSpec = PRICE_BOOK[input.tier];
-  const monthly = monthlyCents(input.tier, input.frequency);
+  const monthly = recurringUnitAmountCents({
+    measuredPerVisit: input.measuredPerVisit,
+    tier: input.tier,
+    frequency: input.frequency,
+  });
 
   // Recurring subscription line: tier × frequency, monthly cadence.
   const subscriptionLine: Stripe.Checkout.SessionCreateParams.LineItem = {

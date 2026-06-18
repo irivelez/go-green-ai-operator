@@ -56,6 +56,12 @@ export interface Lead {
   area_confirmed_by_customer?: boolean;
   slope_tier?: "flat" | "moderate" | "steep";
   slope_source?: "elevation" | "photo_raised";
+  // Measured-area × slope priced numbers (spec §A.4) — persisted by
+  // compute_exact_price so propose_checkout + Stripe + dashboard agree on ONE
+  // source of truth. Stripe charges per_visit_price × FREQUENCY_MULTIPLIER, NOT
+  // the flat PRICE_BOOK[tier].perVisit (review blocker A).
+  per_visit_price?: number;
+  monthly_price?: number;
   intent?: string;
   _actions: string[]; // idempotency ledger of (action_hash)
   events?: LeadEvent[]; // HITL learning loop — owner corrections + agent decisions

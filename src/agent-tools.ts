@@ -180,6 +180,10 @@ export interface ProposeCheckoutResult {
   url?: string; // Stripe Checkout URL — only when a key is configured
   sessionId?: string;
   fixedAddOnIds?: string[];
+  // Measured area×slope per-visit USD when the lead has been measured. Forwarded
+  // to createSubscriptionCheckout so Stripe charges THIS number (review blocker
+  // A) — the same one shown on ExactPriceCard. Undefined → legacy flat path.
+  measuredPerVisit?: number;
 }
 
 export function runProposeCheckout(
@@ -202,6 +206,10 @@ export function runProposeCheckout(
     return { status: "missing_photos", message: "Photos are required before autonomous checkout." };
   }
 
+  // priceCart is still used for the add-on resolution (fixed vs open-ended,
+  // catalog lookup, validation) — only the recurring side switches to the
+  // measured number when the lead has been measured. Open-ended add-ons stay
+  // out of the charged total in either path.
   let pricing: PricingResult;
   try {
     pricing = priceCart({ tier: args.tier, frequency: args.frequency, addOnIds: args.addOnIds });
@@ -209,13 +217,34 @@ export function runProposeCheckout(
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
   }
 
+  // REVIEW BLOCKER A — charge MUST match the quote. When the lead has been
+  // measured (confirm_area ran), the recurring price is the same area×slope
+  // pricePerVisit number ExactPriceCard shows the customer; otherwise fall back
+  // to the legacy flat PRICE_BOOK path so operator.ts + non-measured flows stay
+  // intact.
+  let measuredPerVisit: number | undefined;
+  let monthlyRecurring = pricing.monthlyRecurring;
+  if (lead.confirmed_sqft && lead.confirmed_sqft > 0 && lead.slope_tier) {
+    const measured = pricePerVisit({
+      measured_area_sqft: lead.confirmed_sqft,
+      slope_tier: lead.slope_tier,
+      frequency: args.frequency,
+    });
+    measuredPerVisit = measured.perVisit;
+    monthlyRecurring = measured.monthly;
+  }
+
   const fixedAddOnIds = args.addOnIds.filter((id) => addOnById(id)?.kind === "fixed");
+  const fixedSum = pricing.fixedAddOnLineItems.reduce((s, x) => s + x.amount, 0);
+  const amount = Math.round((monthlyRecurring + fixedSum) * 100) / 100;
+
   const base: ProposeCheckoutResult = {
     status: "ready",
-    amount: pricing.firstChargeTotal,
-    monthlyRecurring: pricing.monthlyRecurring,
+    amount,
+    monthlyRecurring,
     currency: "USD",
     fixedAddOnIds,
+    measuredPerVisit,
   };
 
   // No Stripe key (local/dev) → expose the authoritative amount but make clear we
@@ -475,6 +504,16 @@ export function runComputeExactPrice(
     frequency: args.frequency,
   });
   const spec = PRICE_BOOK[args.tier];
+  // Persist the priced numbers — propose_checkout / Stripe / dashboard now all
+  // read the SAME source of truth (review blocker A).
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: lead?.channel ?? "form",
+    per_visit_price: r.perVisit,
+    monthly_price: r.monthly,
+    suggested_package: spec.name,
+    desired_frequency: args.frequency,
+  });
   return {
     status: "priced",
     perVisit: r.perVisit,
@@ -652,6 +691,7 @@ export function buildTools(ctx: ToolContext) {
             tier: args.tier,
             frequency: args.frequency,
             selectedAddOnIds: decision.fixedAddOnIds ?? [],
+            measuredPerVisit: decision.measuredPerVisit,
             customer: {
               name: args.name,
               email: args.email,
