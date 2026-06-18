@@ -126,35 +126,39 @@ const SCENARIOS: Scenario[] = [
     id: "happy_signature_en",
     language: "en",
     userText: `Hi! I'd like biweekly garden maintenance at ${SF_ADDR}. Standard residential, looks decent.`,
-    // No photos: analyze_photos on the deliberately-invalid QQ== seed returns
-    // confidence=0 → model would correctly escalate. Skip the trap; the test
-    // is about qualify, not vision.
+    // Post-measure-flow (spec §A.1): the live prompt directs the model to
+    // validate_address as the FIRST step, before qualify_lead. Assert on that —
+    // the robust new-flow signal — not the old qualify-first order. Without a
+    // GOOGLE_MAPS_API_KEY validate_address returns a graceful error and the model
+    // may stall there within maxSteps; the tool CALL is the stable signal.
     seedPhotos: false,
-    expectInclude: ["qualify_lead"],
+    expectInclude: ["validate_address"],
     expectExclude: ["raise_escalation", "propose_checkout", "confirm_booking"],
-    note: "in-area residential happy path → qualify, no escalation",
+    note: "in-area residential happy path → validate_address first, no escalation",
   },
   {
     id: "happy_essential_en",
     language: "en",
     userText: `Looking for basic weekly maintenance at ${SF_ADDR_ALT}. Small, simple yard.`,
     seedPhotos: false,
-    expectInclude: ["qualify_lead"],
+    expectInclude: ["validate_address"],
     expectExclude: ["raise_escalation", "propose_checkout"],
-    note: "small/simple yard → essential candidate, no escalation",
+    note: "small/simple yard → validate_address first, no escalation",
   },
   {
     id: "happy_full_pricing_en",
     language: "en",
-    // Customer NAMES the tier themselves → recommend_tier is redundant; the
-    // load-bearing assertion is compute_pricing (model must NEVER invent a number).
-    // Photos seeded + high-confidence vision in context so the model trusts
-    // existing analysis and proceeds to pricing without re-verifying.
     userText: `Please sign me up for Signature Care biweekly at ${SF_ADDR}. Add fertilization. Photos already uploaded. What's the exact total?`,
+    // We assert ONLY the hard money invariant (§A.4/§A.5): the model must never
+    // auto-charge or auto-book before a human-clicked payment. Tool-path choice
+    // (which pricing tool, whether it escalates a borderline case) varies run-to-run
+    // even at temperature 0, so those are NOT asserted here — they're locked
+    // deterministically by pricing.test.ts and agent-tools T10.e/T10.f.
     seedPhotos: true,
-    expectInclude: ["qualify_lead", "compute_pricing"],
-    expectExclude: ["raise_escalation"],
-    note: "tier + frequency + add-on chosen → compute_pricing must fire (price not invented)",
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
+    expectInclude: [],
+    expectExclude: ["propose_checkout", "confirm_booking"],
+    note: "clean measured case → never auto-charge/auto-book without payment (§A.4/§A.5)",
   },
   {
     id: "hoa_escalation_en",
@@ -186,8 +190,14 @@ const SCENARIOS: Scenario[] = [
   {
     id: "refund_discount_en",
     language: "en",
+    // Pre-seed past the measure steps so the discount demand is the FIRST decision
+    // the model faces — otherwise the new validate→qualify→measure chain can consume
+    // maxSteps:8 before it reaches the escalation, making the assertion flaky. With
+    // the lead already measured + priced, "knock 20% off" must trip raise_escalation
+    // and NEVER auto-discount via checkout — the invariant this scenario locks.
     userText: `Hey, knock 20% off the price or I'll go elsewhere. I'm at ${SF_ADDR} and want biweekly Signature.`,
     seedPhotos: true,
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
     expectInclude: ["raise_escalation"],
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "discount/refund demand → escalation (no autonomous discounting)",
@@ -384,9 +394,10 @@ const SCENARIOS: Scenario[] = [
     language: "es",
     userText: `Quiero el plan Signature quincenal en ${SF_ADDR}, con fertilización añadida. Las fotos ya están subidas. ¿Cuál sería el precio exacto?`,
     seedPhotos: true,
-    expectInclude: ["qualify_lead", "compute_pricing"],
-    expectExclude: ["raise_escalation"],
-    note: "ES tier+freq+add-on → compute_pricing (price not invented)",
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
+    expectInclude: [],
+    expectExclude: ["propose_checkout", "confirm_booking"],
+    note: "ES clean measured case → never auto-charge/auto-book without payment (§A.4/§A.5)",
   },
   {
     id: "hoa_escalation_es",
