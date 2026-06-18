@@ -17,6 +17,7 @@ import {
   runValidateAddress,
   runConfirmArea,
   runComputeExactPrice,
+  runAnalyzePhotos,
   type ToolContext,
 } from "./agent-tools";
 import { PRICE_BOOK, monthlyFromVisit } from "./contract";
@@ -246,6 +247,29 @@ console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises 
   }
 }
 
+console.log("\n=== SEC-F: confirm_area re-draw clears stale price (no pay against an outdated quote) ===");
+{
+  resetStore([]);
+  upsertLead({
+    lead_id: "L_SEC_F", channel: "form",
+    confirmed_sqft: 2500, slope_tier: "flat",
+    per_visit_price: 173, monthly_price: 375.41,
+  });
+  // ~15m × 18m rectangle ≈ 2,900 sqft — a valid SF residential lot (under the
+  // 60000 sqft ceiling), so the re-confirm reaches the persist path.
+  const path = [
+    { lat: 37.75,             lng: -122.42 },
+    { lat: 37.75 + 0.000135,  lng: -122.42 },
+    { lat: 37.75 + 0.000135,  lng: -122.42 + 0.000204 },
+    { lat: 37.75,             lng: -122.42 + 0.000204 },
+  ];
+  const r = runConfirmArea(ctx("L_SEC_F"), { path });
+  ok("re-confirm succeeds", r.status === "confirmed", JSON.stringify(r).slice(0, 120));
+  const lead = getLead("L_SEC_F");
+  ok("stale per_visit_price cleared on re-confirm", lead?.per_visit_price === undefined, `got ${lead?.per_visit_price}`);
+  ok("stale monthly_price cleared on re-confirm", lead?.monthly_price === undefined, `got ${lead?.monthly_price}`);
+}
+
 console.log("\n=== SEC-D: confirm_area — out-of-range polygon is refused, never persisted as confirmed ===");
 {
   resetStore([]);
@@ -268,6 +292,19 @@ console.log("\n=== SEC-D: confirm_area — out-of-range polygon is refused, neve
   ok("lead.confirmed_sqft NOT persisted from oversized polygon",
     !lead?.confirmed_sqft || lead.confirmed_sqft <= 60000,
     `got ${lead?.confirmed_sqft}`);
+}
+
+console.log("\n=== SEC-E: analyze_photos — LLM-supplied unsafe photoUrls are not persisted to the lead ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L_SEC_E", channel: "form", photos: ["data:image/png;base64,QQ=="] });
+  await runAnalyzePhotos(ctx("L_SEC_E"), {
+    photoUrls: ["http://169.254.169.254/latest/meta-data/", "data:image/png;base64,QQ=="],
+  });
+  const photos = getLead("L_SEC_E")?.photos ?? [];
+  ok("metadata-IP url NOT persisted to lead.photos",
+    !photos.some((p) => p.startsWith("http")), JSON.stringify(photos).slice(0, 120));
+  ok("safe data: url retained", photos.some((p) => p.startsWith("data:image/")));
 }
 
 console.log("\n=== T10.d: compute_exact_price — missing confirmed_sqft → structured refusal ===");

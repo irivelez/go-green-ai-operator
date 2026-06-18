@@ -18,7 +18,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { geoQualify, scoreLead } from "./qualify";
 import { priceCart, pricePerVisit } from "./pricing";
-import { analyzeYardPhotos } from "./vision";
+import { analyzeYardPhotos, isAllowedPhoto } from "./vision";
 import { availableSlots, bookSlot } from "./scheduler";
 import { createSubscriptionCheckout } from "./stripe";
 import { upsertLead, getLead } from "./store";
@@ -492,6 +492,11 @@ export function runConfirmArea(
     area_confirmed_by_customer: true,
     slope_tier,
     slope_source,
+    // A re-draw changes the measured area → any previously computed price is now
+    // stale. Clear it so the agent must re-run compute_exact_price before checkout
+    // and the customer can never pay against an outdated quote.
+    per_visit_price: undefined,
+    monthly_price: undefined,
   });
 
   return { status: "confirmed", confirmed_sqft, area_source, slope_tier, slope_source };
@@ -597,7 +602,11 @@ export async function runAnalyzePhotos(
   const existing = getLead(ctx.leadId);
   // Prefer explicit urls; otherwise assess the photos already on the lead (the
   // client seeds them on upload, so the model needn't pass huge data: URLs).
-  const urls = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
+  // Filter through isAllowedPhoto so a prompt-injected http/file URL is neither
+  // sent to the model NOR persisted onto the lead (where a future renderer would
+  // fetch it) — closes the sibling exfil vector to the funnel-route photo filter.
+  const raw = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
+  const urls = raw.filter(isAllowedPhoto);
   const assessment = await analyzeYardPhotos(urls);
   upsertLead({
     lead_id: ctx.leadId,
