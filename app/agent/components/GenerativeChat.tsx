@@ -15,6 +15,10 @@ import type {
   ProposeCheckoutResult,
   ConfirmBookingResult,
   RaiseEscalationResult,
+  ValidateAddressToolResult,
+  MeasurePropertyResult,
+  ConfirmAreaResult,
+  ComputeExactPriceResult,
 } from "@/src/agent-tools";
 import {
   type Lang,
@@ -26,7 +30,12 @@ import {
   ConfirmationCard,
   EscalationCard,
   TraceChip,
+  AddressConfirmCard,
+  SlopePhotoPromptCard,
+  ExactPriceCard,
 } from "./cards";
+import { AreaConfirmCard } from "./AreaConfirmCard";
+import type { LatLng } from "@/src/area-card-logic";
 
 const COPY = {
   en: {
@@ -45,6 +54,16 @@ const COPY = {
     finding: "Finding open visits",
     booking: "Locking your booking",
     routing: "Connecting you with a specialist",
+    validatingAddress: "Checking your address",
+    measuring: "Measuring your space",
+    confirmingArea: "Confirming the area",
+    exactPricing: "Calculating your exact price",
+    areaConfirmedChip: (n: number) => `Area confirmed — ${n.toLocaleString()} sqft`,
+    areaConfirmedMessage: (n: number) =>
+      `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
+    areaPostFailed: "I couldn't save the area — let me try again in a moment.",
+    addressYes: "Yes, use that address.",
+    addressNo: "Let me re-enter my address.",
   },
   es: {
     greeting:
@@ -62,6 +81,16 @@ const COPY = {
     finding: "Buscando visitas disponibles",
     booking: "Confirmando tu reserva",
     routing: "Conectándote con un especialista",
+    validatingAddress: "Verificando tu dirección",
+    measuring: "Midiendo tu espacio",
+    confirmingArea: "Confirmando el área",
+    exactPricing: "Calculando tu precio exacto",
+    areaConfirmedChip: (n: number) => `Área confirmada — ${n.toLocaleString()} pies²`,
+    areaConfirmedMessage: (n: number) =>
+      `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
+    areaPostFailed: "No pude guardar el área — déjame intentarlo de nuevo.",
+    addressYes: "Sí, usa esa dirección.",
+    addressNo: "Déjame corregir mi dirección.",
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
@@ -153,6 +182,10 @@ export function GenerativeChat({ language }: { language: Lang }) {
       case "offer_slots": return c.finding;
       case "confirm_booking": return c.booking;
       case "raise_escalation": return c.routing;
+      case "validate_address": return c.validatingAddress;
+      case "measure_property": return c.measuring;
+      case "confirm_area": return c.confirmingArea;
+      case "compute_exact_price": return c.exactPricing;
       default: return c.running;
     }
   };
@@ -220,6 +253,77 @@ export function GenerativeChat({ language }: { language: Lang }) {
         return <ConfirmationCard key={key} lang={language} r={res as ConfirmBookingResult} />;
       case "raise_escalation":
         return <EscalationCard key={key} lang={language} r={res as RaiseEscalationResult} />;
+      case "validate_address": {
+        const r = res as ValidateAddressToolResult;
+        return (
+          <AddressConfirmCard
+            key={key}
+            result={r}
+            lang={language}
+            onConfirm={(useStd) => send(useStd ? c.addressYes : c.addressNo)}
+          />
+        );
+      }
+      case "measure_property": {
+        const r = res as MeasurePropertyResult;
+        // Derive map center from roof_bbox midpoint when present; fall back to SF.
+        // (The bbox came from the deterministic Solar/Elevation pipeline, so it's
+        // the truthful anchor for the satellite preview.)
+        const center: LatLng = r.roof_bbox
+          ? {
+              lat: (r.roof_bbox.sw.lat + r.roof_bbox.ne.lat) / 2,
+              lng: (r.roof_bbox.sw.lng + r.roof_bbox.ne.lng) / 2,
+            }
+          : { lat: 37.7749, lng: -122.4194 };
+        return (
+          <AreaConfirmCard
+            key={key}
+            result={r}
+            center={center}
+            lang={language}
+            onConfirm={async (path: LatLng[]) => {
+              // Polygon → dedicated endpoint (bypasses the LLM context; server
+              // re-derives the authoritative sqft from the raw ring). The chat
+              // message that follows is the customer's CONSENT cue so the LLM
+              // advances to compute_exact_price — the polygon itself never
+              // enters the model.
+              try {
+                const resp = await fetch("/api/funnel/confirm-area", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    leadId: leadIdRef.current,
+                    language,
+                    path,
+                  }),
+                });
+                if (!resp.ok) throw new Error(`confirm-area HTTP ${resp.status}`);
+                const data = (await resp.json()) as ConfirmAreaResult;
+                send(c.areaConfirmedMessage(data.confirmed_sqft));
+              } catch (err) {
+                // Surface a soft retry hint into the chat — never silent.
+                // eslint-disable-next-line no-console
+                console.error("[confirm-area] failed:", err);
+                send(c.areaPostFailed);
+              }
+            }}
+          />
+        );
+      }
+      case "confirm_area": {
+        const r = res as ConfirmAreaResult;
+        return (
+          <div
+            key={key}
+            className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-moss-500" strokeWidth={2} />
+            {c.areaConfirmedChip(r.confirmed_sqft)}
+          </div>
+        );
+      }
+      case "compute_exact_price":
+        return <ExactPriceCard key={key} lang={language} result={res as ComputeExactPriceResult} />;
       default:
         return null;
     }
