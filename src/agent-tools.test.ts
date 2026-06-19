@@ -382,6 +382,33 @@ console.log("\n=== T10.a7: validate_address — UNVALIDATABLE clears stale parts
   ok("stale lat cleared", lead?.lat === undefined, String(lead?.lat));
 }
 
+console.log("\n=== T10.a8: validate_address — clearStaleGeo covers a partial-state lead (only street_type/lng set) ===");
+{
+  resetStore([]);
+  // Defense-in-depth: the early-return guard must check ALL five geo fields, not just
+  // three. A lead carrying only street_type/lng (a partial state) must STILL be cleared
+  // on UNVALIDATABLE — otherwise a stale fragment could survive into a wrong-parcel join.
+  upsertLead({ lead_id: "L7h", channel: "form", street_type: "ST", lng: -122.4271081 });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: { result: { verdict: {}, address: { formattedAddress: "asdf" }, geocode: { location: { latitude: 0, longitude: 0 } } } },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  await runValidateAddress(ctx("L7h"), {
+    addressLines: ["asdfqwer"], locality: "Nowhere", adminArea: "ZZ", postalCode: "00000",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  const lead = getLead("L7h");
+  ok("stale street_type cleared (partial state)", lead?.street_type === undefined, lead?.street_type);
+  ok("stale lng cleared (partial state)", lead?.lng === undefined, String(lead?.lng));
+}
+
 console.log("\n=== T10.a6: validate_address — persists rooftop lat/lng on the lead (slope source of truth) ===");
 {
   resetStore([]);

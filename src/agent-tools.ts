@@ -355,7 +355,14 @@ export async function runValidateAddress(
   // wrong lot). Clearing forces the heuristic/draw fallback until a clean validate.
   const clearStaleGeo = () => {
     const existing = getLead(ctx.leadId);
-    if (!existing?.address_number && !existing?.street_name && existing?.lat === undefined) return;
+    if (
+      !existing?.address_number &&
+      !existing?.street_name &&
+      !existing?.street_type &&
+      existing?.lat === undefined &&
+      existing?.lng === undefined
+    )
+      return;
     upsertLead({
       lead_id: ctx.leadId,
       channel: existing?.channel ?? "form",
