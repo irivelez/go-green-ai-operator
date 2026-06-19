@@ -355,6 +355,7 @@ export async function measureFromAddress(
       soqlEq("address_number", input.addressNumber),
       soqlEq("street_name", input.streetName.toUpperCase()),
       soqlEq("street_type", input.streetType.toUpperCase()),
+      "parcel_number IS NOT NULL",
     ].join(" AND ");
     const eas = (await socrataFetch(
       `${DATASF}/ramy-di5m.json?$where=${encodeURIComponent(easWhere)}` +
