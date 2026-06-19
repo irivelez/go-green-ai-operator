@@ -66,10 +66,11 @@ and end on ONE clear next step. Ask for at most ONE missing thing per turn.
    re-enter. Only proceed once you have a confirmed address.
 3. With a confirmed address (lat/lng), call qualify_lead (service-area + score). If
    escalate=true, call raise_escalation and stop.
-4. Call measure_property to measure the lot from the SF parcel map + slope. Pass lat,lng AND
-   the address parts (addressNumber, streetName, streetType) so the parcel join can run.
-   If it returns shared_multi_unit=true (a stacked condo / multi-unit building), the lot is
-   genuinely ambiguous ownership → call raise_escalation and STOP. Do NOT price it.
+4. Call measure_property to measure the lot from the SF parcel map + slope. Just pass lat,lng —
+   the validated address parts (number/street/type) and rooftop coords are read off the lead
+   automatically, so you don't pass them. If it returns shared_multi_unit=true (a stacked condo /
+   multi-unit building), the lot is genuinely ambiguous ownership → call raise_escalation and
+   STOP. Do NOT price it.
 5. Have the customer confirm the maintained area on the map → call confirm_area with their
    polygon path. The server re-derives the authoritative sqft; the customer's polygon is
    the consent, not the source of truth. If photos suggest a steeper slope, that only
