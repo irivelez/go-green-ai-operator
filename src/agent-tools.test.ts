@@ -210,10 +210,295 @@ console.log("\n=== T10.a: validate_address — no Google key → graceful error,
   ok("no_key → reason surfaced", typeof (result as { reason?: string })?.reason === "string");
 }
 
+console.log("\n=== T10.a2: validate_address — VALIDATED persists USPS structured parts on the lead ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7b", channel: "form" });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: { formattedAddress: "1916 Octavia Street, San Francisco, CA 94109-3357, USA" },
+            geocode: { location: { latitude: 37.7904, longitude: -122.4271 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1916 OCTAVIA ST" } },
+          },
+        },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  const res = await runValidateAddress(ctx("L7b"), {
+    addressLines: ["1916 Octavia St"], locality: "San Francisco", adminArea: "CA", postalCode: "94109",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  ok("status validated", res.status === "validated", JSON.stringify(res).slice(0, 120));
+  const lead = getLead("L7b");
+  ok("lead.address_number '1916'", lead?.address_number === "1916", lead?.address_number);
+  ok("lead.street_name 'OCTAVIA'", lead?.street_name === "OCTAVIA", lead?.street_name);
+  ok("lead.street_type 'ST'", lead?.street_type === "ST", lead?.street_type);
+}
+
+console.log("\n=== T10.a3: validate_address — CORRECTED persists parts (common SF path), withholds address string ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7c", channel: "form" });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true, hasInferredComponents: true },
+            address: { formattedAddress: "1916 Octavia Street, San Francisco, CA 94109-3357, USA" },
+            geocode: { location: { latitude: 37.7904, longitude: -122.4271 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1916 OCTAVIA ST" } },
+          },
+        },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  const res = await runValidateAddress(ctx("L7c"), {
+    addressLines: ["1916 Octavia St"], locality: "San Francisco", adminArea: "CA", postalCode: "94109",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  ok("status needs_confirm", res.status === "needs_confirm", JSON.stringify(res).slice(0, 120));
+  const lead = getLead("L7c");
+  // CORRECTED is the COMMON SF path (Google infers ZIP+4 → hasInferredComponents).
+  // Parts ARE persisted (the "Yes, use this" button doesn't re-run validate), but the
+  // address STRING stays unset until confirmed — measure runs only after "Yes".
+  ok("parts persisted on CORRECTED (Yes button doesn't re-validate)", lead?.street_name === "OCTAVIA", lead?.street_name);
+  ok("address string NOT yet set on CORRECTED (awaits Yes)", !lead?.address, lead?.address);
+}
+
+console.log("\n=== T10.a4: validate_address — typo correction (hasReplacedComponents) still persists parts ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7d", channel: "form" });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true, hasReplacedComponents: true },
+            address: {
+              formattedAddress: "1916 Octavia Street, San Francisco, CA 94109-3357, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "1916" } },
+                { componentType: "route", componentName: { text: "Octavia Street" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.7904, longitude: -122.4271 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1916 OCTAVIA ST" } },
+          },
+        },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  const res = await runValidateAddress(ctx("L7d"), {
+    addressLines: ["1916 Octavea St"], locality: "San Francisco", adminArea: "CA", postalCode: "94109",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  ok("status needs_confirm", res.status === "needs_confirm", JSON.stringify(res).slice(0, 120));
+  const lead = getLead("L7d");
+  ok("typo-corrected parts persisted from standardized form", lead?.street_name === "OCTAVIA", lead?.street_name);
+}
+
+console.log("\n=== T10.a5: validate_address — re-edit overwrites prior parts (No → re-enter) ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7e", channel: "form", address_number: "1916", street_name: "OCTAVIA", street_type: "ST" });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: { formattedAddress: "566 South Van Ness Ave, San Francisco, CA 94110, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "566" } },
+                { componentType: "route", componentName: { text: "South Van Ness Avenue" } },
+              ] },
+            geocode: { location: { latitude: 37.7635, longitude: -122.4165 }, accuracy: "ROOFTOP" },
+          },
+        },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  await runValidateAddress(ctx("L7e"), {
+    addressLines: ["566 South Van Ness Ave"], locality: "San Francisco", adminArea: "CA", postalCode: "94110",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  const lead = getLead("L7e");
+  ok("re-edit overwrote street_name to 'SOUTH VAN NESS'", lead?.street_name === "SOUTH VAN NESS", lead?.street_name);
+  ok("re-edit overwrote address_number to '566'", lead?.address_number === "566", lead?.address_number);
+}
+
+console.log("\n=== T10.a7: validate_address — UNVALIDATABLE clears stale parts (no wrong-parcel measure) ===");
+{
+  resetStore([]);
+  // Customer corrected address A (parts persisted), then re-entered garbage that comes
+  // back UNVALIDATABLE. The stale A-parts MUST be cleared, else a loosely-ordered LLM
+  // could measure the WRONG parcel. Wrong-parcel is worse than no-parcel.
+  upsertLead({
+    lead_id: "L7g", channel: "form",
+    address_number: "1916", street_name: "OCTAVIA", street_type: "ST",
+    lat: 37.7904236, lng: -122.4271081,
+  });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: { result: { verdict: {}, address: { formattedAddress: "asdf" }, geocode: { location: { latitude: 0, longitude: 0 } } } },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  const res = await runValidateAddress(ctx("L7g"), {
+    addressLines: ["asdfqwer"], locality: "Nowhere", adminArea: "ZZ", postalCode: "00000",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  ok("status unvalidatable", res.status === "unvalidatable", JSON.stringify(res));
+  const lead = getLead("L7g");
+  ok("stale street_name cleared", !lead?.street_name, lead?.street_name);
+  ok("stale address_number cleared", !lead?.address_number, lead?.address_number);
+  ok("stale lat cleared", lead?.lat === undefined, String(lead?.lat));
+}
+
+console.log("\n=== T10.a6: validate_address — persists rooftop lat/lng on the lead (slope source of truth) ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L7f", channel: "form" });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true, hasInferredComponents: true },
+            address: { formattedAddress: "1916 Octavia Street, San Francisco, CA 94109-3357, USA" },
+            geocode: { location: { latitude: 37.7904236, longitude: -122.4271081 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1916 OCTAVIA ST" } },
+          },
+        },
+      };
+    }
+    return { status: 200, body: {} };
+  });
+  await runValidateAddress(ctx("L7f"), {
+    addressLines: ["1916 Octavia St"], locality: "San Francisco", adminArea: "CA", postalCode: "94109",
+  });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  const lead = getLead("L7f");
+  ok("lead.lat persisted (CORRECTED path too)", lead?.lat === 37.7904236, String(lead?.lat));
+  ok("lead.lng persisted (CORRECTED path too)", lead?.lng === -122.4271081, String(lead?.lng));
+}
+
+console.log("\n=== T10.g1: measure_property — slope read from lead lat/lng, not LLM args (steep stays steep) ===");
+{
+  resetStore([]);
+  // The lead carries the REAL rooftop coords from validate (a known steep SF block).
+  // The LLM passes WRONG/flat coords — the server MUST ignore them and use the lead's.
+  upsertLead({
+    lead_id: "L_M3", channel: "form",
+    address_number: "1916", street_name: "OCTAVIA", street_type: "ST",
+    lat: 37.7904236, lng: -122.4271081,
+  });
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  let elevationSeen = "";
+  mockFetch((url) => {
+    if (url.includes("maps.googleapis.com/maps/api/elevation")) {
+      elevationSeen = url;
+      // 3x3 grid rising ~7.5m per 25m row → ~30% grade → steep.
+      return {
+        status: 200,
+        body: {
+          status: "OK",
+          results: [
+            { elevation: 0 }, { elevation: 0 }, { elevation: 0 },
+            { elevation: 7.5 }, { elevation: 7.5 }, { elevation: 7.5 },
+            { elevation: 15 }, { elevation: 15 }, { elevation: 15 },
+          ],
+        },
+      };
+    }
+    if (url.includes("ramy-di5m")) return { status: 200, body: [] };
+    return { status: 200, body: {} };
+  });
+  const r = await runMeasureProperty(ctx("L_M3"), { lat: 0, lng: 0 });
+  restoreFetch();
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  ok("slope_tier 'steep' from lead coords (LLM 0,0 ignored)", r.slope_tier === "steep", r.slope_tier);
+  ok("elevation sampled the lead's REAL lat (37.79), not LLM 0,0", elevationSeen.includes("37.79"), elevationSeen.slice(0, 90));
+  ok("lead.slope_tier persisted steep", getLead("L_M3")?.slope_tier === "steep", getLead("L_M3")?.slope_tier);
+}
+
+console.log("\n=== T10.g0: measure_property — reads address parts off the lead (no LLM args needed) ===");
+{
+  resetStore([]);
+  upsertLead({
+    lead_id: "L_M0", channel: "form",
+    address_number: "1450", street_name: "PAGE", street_type: "ST",
+  });
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  let easUrlSeen = "";
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) {
+      easUrlSeen = url;
+      return { status: 200, body: [{ parcel_number: "3704018", block: "3704", lot: "018" }] };
+    }
+    if (url.includes("acdm-wktn") && url.includes(".geojson")) {
+      return {
+        status: 200,
+        body: {
+          features: [{
+            geometry: {
+              type: "MultiPolygon",
+              coordinates: [[[
+                [-122.42, 37.75], [-122.42, 37.7504],
+                [-122.4195, 37.7504], [-122.4195, 37.75], [-122.42, 37.75],
+              ]]],
+            },
+            properties: { blklot: "3704018", mapblklot: "3704018" },
+          }],
+        },
+      };
+    }
+    if (url.includes("acdm-wktn")) {
+      return { status: 200, body: [{ blklot: "3704018", mapblklot: "3704018" }] };
+    }
+    return { status: 200, body: {} };
+  });
+  const r = await runMeasureProperty(ctx("L_M0"), { lat: 37.7502, lng: -122.4198 });
+  restoreFetch();
+  ok("area_source 'parcel' from lead parts (no args)", r.area_source === "parcel", r.area_source);
+  ok("parcel_ring drawn", r.parcel_ring.length >= 3, `len ${r.parcel_ring.length}`);
+  ok("EAS query used the lead's street parts", easUrlSeen.includes("PAGE"), easUrlSeen.slice(0, 120));
+}
+
 console.log("\n=== T10.g: measure_property — single-family DataSF parcel ring → outline + no escalation ===");
 {
   resetStore([]);
-  upsertLead({ lead_id: "L_M1", channel: "form" });
+  upsertLead({ lead_id: "L_M1", channel: "form", address_number: "1450", street_name: "PAGE", street_type: "ST" });
   delete process.env.GOOGLE_MAPS_API_KEY; // slope/Solar key-guarded off; DataSF still runs
   mockFetch((url) => {
     if (url.includes("ramy-di5m")) {
@@ -242,10 +527,7 @@ console.log("\n=== T10.g: measure_property — single-family DataSF parcel ring 
     return { status: 200, body: {} };
   });
 
-  const r = await runMeasureProperty(ctx("L_M1"), {
-    lat: 37.7502, lng: -122.4198,
-    addressNumber: "1450", streetName: "PAGE", streetType: "ST",
-  });
+  const r = await runMeasureProperty(ctx("L_M1"), { lat: 37.7502, lng: -122.4198 });
   restoreFetch();
   ok("area_source 'parcel'", r.area_source === "parcel", r.area_source);
   ok("NOT shared_multi_unit", r.shared_multi_unit === false, String(r.shared_multi_unit));
@@ -256,7 +538,7 @@ console.log("\n=== T10.g: measure_property — single-family DataSF parcel ring 
 console.log("\n=== T10.h: measure_property — stacked condo (mapblklot≠blklot) → shared_multi_unit (escalate) ===");
 {
   resetStore([]);
-  upsertLead({ lead_id: "L_M2", channel: "form" });
+  upsertLead({ lead_id: "L_M2", channel: "form", address_number: "488", street_name: "FOLSOM", street_type: "ST" });
   delete process.env.GOOGLE_MAPS_API_KEY;
   mockFetch((url) => {
     if (url.includes("ramy-di5m")) {
@@ -268,10 +550,7 @@ console.log("\n=== T10.h: measure_property — stacked condo (mapblklot≠blklot
     return { status: 200, body: {} };
   });
 
-  const r = await runMeasureProperty(ctx("L_M2"), {
-    lat: 37.7879, lng: -122.3944,
-    addressNumber: "488", streetName: "FOLSOM", streetType: "ST",
-  });
+  const r = await runMeasureProperty(ctx("L_M2"), { lat: 37.7879, lng: -122.3944 });
   restoreFetch();
   ok("shared_multi_unit true → agent must escalate", r.shared_multi_unit === true, String(r.shared_multi_unit));
   ok("no parcel_ring for escalated condo", r.parcel_ring.length === 0, `len ${r.parcel_ring.length}`);
@@ -298,6 +577,45 @@ console.log("\n=== T10.b: confirm_area — re-derives sqft from path; client-sup
     // Even if a malicious LLM crammed in a different number, the path's own area math wins.
     // We don't expose a "claimed sqft" input — there's literally nowhere to inject one.
   }
+}
+
+console.log("\n=== T10.b2: confirm_area — no lead → lead_missing, NEVER fabricates a flat-slope stub ===");
+{
+  resetStore([]);
+  // Cross-route store split (defect #4): measure_property wrote slope to one store
+  // instance, confirm_area's route reads a DIFFERENT instance with NO lead. It MUST
+  // refuse to invent a flat-slope stub (which would clobber the real steep slope and
+  // price a steep lot as flat). Loud lead_missing > silent wrong price.
+  const path = [
+    { lat: 37.75,             lng: -122.42 },
+    { lat: 37.75 + 0.000135,  lng: -122.42 },
+    { lat: 37.75 + 0.000135,  lng: -122.42 + 0.000204 },
+    { lat: 37.75,             lng: -122.42 + 0.000204 },
+  ];
+  const r = runConfirmArea(ctx("L_NOLEAD"), { path });
+  ok("status 'lead_missing' (no fabricated stub)", r.status === "lead_missing", JSON.stringify(r).slice(0, 120));
+  ok("confirmed_sqft still echoed for client feedback", typeof (r as { confirmed_sqft?: number }).confirmed_sqft === "number");
+  ok("lead NOT created with default flat slope", getLead("L_NOLEAD") === undefined, JSON.stringify(getLead("L_NOLEAD")));
+}
+
+console.log("\n=== T10.b3: confirm_area → compute_exact_price — colocated steep slope prices steep (not flat) ===");
+{
+  resetStore([]);
+  // The measure step already persisted steep on this lead (same store). confirm_area
+  // must PRESERVE steep (not reset to flat), so compute_exact_price prices steep.
+  upsertLead({ lead_id: "L_STEEP", channel: "form", slope_tier: "steep", slope_source: "elevation" });
+  const path = [
+    { lat: 37.75,             lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 },
+    { lat: 37.75 + 0.000449,  lng: -122.42 + 0.001136 },
+    { lat: 37.75,             lng: -122.42 + 0.001136 },
+  ];
+  const ca = runConfirmArea(ctx("L_STEEP"), { path });
+  ok("confirm_area preserves steep", ca.status === "confirmed" && ca.slope_tier === "steep", JSON.stringify(ca).slice(0, 120));
+  const sqft = ca.status === "confirmed" ? ca.confirmed_sqft : 0;
+  const price = runComputeExactPrice(ctx("L_STEEP"), { tier: "signature", frequency: "biweekly" });
+  const expected = pricePerVisit({ measured_area_sqft: sqft, slope_tier: "steep", frequency: "biweekly" });
+  ok("price uses steep multiplier (not flat)", price.status === "priced" && price.perVisit === expected.perVisit, JSON.stringify(price).slice(0, 120));
 }
 
 console.log("\n=== T10.c: confirm_area — vision steepness_hint='steep' raises tier flat→moderate ===");

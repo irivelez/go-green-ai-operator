@@ -347,31 +347,60 @@ export async function runValidateAddress(
   args: { addressLines: string[]; locality: string; adminArea: string; postalCode: string },
 ): Promise<ValidateAddressToolResult> {
   const res = await validateAddress(args);
-  if (!res.ok) return { status: "error", reason: res.reason };
+
+  // Any non-success verdict (error / UNVALIDATABLE) MUST clear previously-persisted
+  // parts + coords. Otherwise a customer who corrected address A, then re-typed
+  // garbage, leaves A's parts on the lead — and a loosely-ordered LLM could measure
+  // the WRONG parcel. Wrong-parcel is worse than no-parcel (it silently prices the
+  // wrong lot). Clearing forces the heuristic/draw fallback until a clean validate.
+  const clearStaleGeo = () => {
+    const existing = getLead(ctx.leadId);
+    if (!existing?.address_number && !existing?.street_name && existing?.lat === undefined) return;
+    upsertLead({
+      lead_id: ctx.leadId,
+      channel: existing?.channel ?? "form",
+      address_number: undefined,
+      street_name: undefined,
+      street_type: undefined,
+      lat: undefined,
+      lng: undefined,
+    });
+  };
+
+  if (!res.ok) {
+    clearStaleGeo();
+    return { status: "error", reason: res.reason };
+  }
   const original = [args.addressLines.join(" "), args.locality, args.adminArea, args.postalCode]
     .filter(Boolean)
     .join(", ");
-  if (res.verdict === "VALIDATED") {
+  if (res.verdict === "VALIDATED" || res.verdict === "CORRECTED") {
     const existing = getLead(ctx.leadId);
     upsertLead({
       lead_id: ctx.leadId,
       channel: existing?.channel ?? "form",
-      address: res.standardized.formattedAddress,
-    });
-    return {
-      status: "validated",
-      standardized: res.standardized.formattedAddress,
+      address: res.verdict === "VALIDATED" ? res.standardized.formattedAddress : existing?.address,
+      address_number: res.parts?.addressNumber,
+      street_name: res.parts?.streetName,
+      street_type: res.parts?.streetType,
       lat: res.standardized.lat,
       lng: res.standardized.lng,
-    };
-  }
-  if (res.verdict === "CORRECTED") {
+    });
+    if (res.verdict === "VALIDATED") {
+      return {
+        status: "validated",
+        standardized: res.standardized.formattedAddress,
+        lat: res.standardized.lat,
+        lng: res.standardized.lng,
+      };
+    }
     return {
       status: "needs_confirm",
       didYouMean: res.didYouMean ?? res.standardized.formattedAddress,
       original,
     };
   }
+  clearStaleGeo();
   return { status: "unvalidatable" };
 }
 
@@ -398,15 +427,13 @@ export interface MeasurePropertyResult {
 
 export async function runMeasureProperty(
   ctx: ToolContext,
-  args: {
-    lat: number;
-    lng: number;
-    addressNumber?: string;
-    streetName?: string;
-    streetType?: string;
-  },
+  args: { lat: number; lng: number },
 ): Promise<MeasurePropertyResult> {
-  const slope = await slopeGradeTier(args.lat, args.lng);
+  const leadForParcel = getLead(ctx.leadId);
+  const lat = typeof leadForParcel?.lat === "number" ? leadForParcel.lat : args.lat;
+  const lng = typeof leadForParcel?.lng === "number" ? leadForParcel.lng : args.lng;
+
+  const slope = await slopeGradeTier(lat, lng);
   const slope_tier: "flat" | "moderate" | "steep" = slope.ok ? slope.slope_tier : "flat";
   const max_grade_pct = slope.ok ? slope.max_grade_pct : null;
 
@@ -417,11 +444,11 @@ export async function runMeasureProperty(
   let area_confidence = 0.4;
 
   const parcel =
-    args.addressNumber && args.streetName && args.streetType
+    leadForParcel?.address_number && leadForParcel?.street_name && leadForParcel?.street_type
       ? await measureFromAddress({
-          addressNumber: args.addressNumber,
-          streetName: args.streetName,
-          streetType: args.streetType,
+          addressNumber: leadForParcel.address_number,
+          streetName: leadForParcel.street_name,
+          streetType: leadForParcel.street_type,
         })
       : { ok: false as const, reason: "missing_address_parts" };
 
@@ -433,7 +460,7 @@ export async function runMeasureProperty(
     estimated_sqft = computePolygonSqft(parcel_ring);
     area_confidence = 0.85;
   } else {
-    const roof = await autoMeasureRoofBbox(args.lat, args.lng);
+    const roof = await autoMeasureRoofBbox(lat, lng);
     if (roof.ok) {
       const est = estimateLotSqft(roof.roof_area_m2);
       estimated_sqft = est.estimated_sqft;
@@ -489,6 +516,11 @@ export type ConfirmAreaResult =
       status: "area_out_of_range";
       confirmed_sqft: number;
       message: string;
+    }
+  | {
+      status: "lead_missing";
+      confirmed_sqft: number;
+      message: string;
     };
 
 const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
@@ -511,6 +543,18 @@ export function runConfirmArea(
         confirmed_sqft <= 0
           ? "The polygon you drew is empty — please re-draw the maintained area."
           : `The polygon you drew is ${confirmed_sqft.toLocaleString()} sqft, which is well above any SF residential lot. Please re-draw just the maintained area.`,
+    };
+  }
+
+  // No measured lead in this store → measure_property never ran here (cross-route
+  // store split). Refuse to fabricate a lead with a DEFAULT flat slope: that would
+  // clobber the real (possibly steep) measurement and price a steep lot as flat.
+  // Loud lead_missing > silent wrong price; the client re-routes through the agent.
+  if (!existing) {
+    return {
+      status: "lead_missing",
+      confirmed_sqft,
+      message: "We lost track of your property measurement — let's re-check the address before pricing.",
     };
   }
 
@@ -726,13 +770,10 @@ export function buildTools(ctx: ToolContext) {
 
     measure_property: tool({
       description:
-        "Measure the property from the SF parcel map (DataSF): the real lot polygon for one-tap confirm, plus Elevation API slope tier. Pass the address parts (number/street/type) from the validated address so the parcel join can run; lat/lng drive slope. Returns shared_multi_unit=true for a stacked condo (ambiguous ownership — you MUST raise_escalation, do NOT price). Falls back to a Solar+heuristic estimate when the address has no parcel match (single-family); the customer still confirms on the map. Persists estimated_sqft + slope on the lead.",
+        "Measure the property from the SF parcel map (DataSF): the real lot polygon for one-tap confirm, plus Elevation API slope tier. The validated address parts are read from the lead automatically — just pass lat/lng (they drive slope). Returns shared_multi_unit=true for a stacked condo (ambiguous ownership — you MUST raise_escalation, do NOT price). Falls back to a Solar+heuristic estimate when the address has no parcel match (single-family); the customer still confirms on the map. Persists estimated_sqft + slope on the lead.",
       parameters: z.object({
         lat: z.number().describe("Rooftop latitude from validate_address"),
         lng: z.number().describe("Rooftop longitude from validate_address"),
-        addressNumber: z.string().optional().describe("Street number, e.g. '488'"),
-        streetName: z.string().optional().describe("Street name only, e.g. 'FOLSOM'"),
-        streetType: z.string().optional().describe("Street type, e.g. 'ST', 'AVE'"),
       }),
       execute: async (args) => runMeasureProperty(ctx, args),
     }),

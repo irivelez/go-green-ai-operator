@@ -31,6 +31,11 @@ export interface Lead {
   channel: "telegram" | "email" | "whatsapp" | "form";
   language?: "en" | "es";
   address?: string;
+  address_number?: string;
+  street_name?: string;
+  street_type?: string;
+  lat?: number;
+  lng?: number;
   zone?: string | null;
   property_type?: string;
   desired_frequency?: string;
