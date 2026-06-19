@@ -34,11 +34,16 @@ export default function Page() {
   }, [refresh]);
 
   const onReview = useCallback(
-    async (leadId: string, action: "approve" | "reject") => {
+    async (
+      leadId: string,
+      action: "approve" | "reject",
+      payload: { reason_code?: string; corrected_value?: string } = {},
+    ) => {
       try {
         const res = await fetch(`/api/leads/${encodeURIComponent(leadId)}/${action}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       } catch (e) {

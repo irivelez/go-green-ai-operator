@@ -20,6 +20,7 @@
     "@ai-sdk/react": "^1.2.12",
     "@anthropic-ai/sdk": "^0.39.0",
     "@composio/core": "^0.10.0",
+    "@vis.gl/react-google-maps": "^1.8.3",
     "ai": "^4.3.19",
     "airtable": "^0.12.2",
     "lucide-react": "^0.469.0",

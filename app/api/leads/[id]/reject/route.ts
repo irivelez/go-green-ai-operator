@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLead, upsertLead } from "@/src/store";
+import { handleReject, OwnerActionSchema } from "@/src/hitl";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const lead = getLead(id);
-  if (!lead) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  const updated = upsertLead({
-    lead_id: id, channel: lead.channel,
-    status: "Not a Fit",
-    internal_notes: `${lead.internal_notes ?? ""}\n[human] declined ${new Date().toISOString()}.`,
-  });
-  return NextResponse.json({ lead: updated });
+  const json = await req.json().catch(() => ({}));
+  const parsed = OwnerActionSchema.safeParse(json ?? {});
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "invalid body", issues: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+  const result = handleReject(id, parsed.data);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 404 });
+  return NextResponse.json({ lead: result.lead });
 }

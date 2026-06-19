@@ -14,6 +14,9 @@ import {
   Users,
   Search,
   CircleCheck,
+  MapPin,
+  Mountain,
+  Camera,
 } from "lucide-react";
 import { PRICE_BOOK, type Tier, type SlotOffer, type PricingResult } from "@/src/contract";
 import type {
@@ -22,6 +25,8 @@ import type {
   ProposeCheckoutResult,
   ConfirmBookingResult,
   RaiseEscalationResult,
+  ValidateAddressToolResult,
+  ComputeExactPriceResult,
 } from "@/src/agent-tools";
 
 export type Lang = "en" | "es";
@@ -49,6 +54,22 @@ const L = {
     handoffSub: "This one needs a human touch — nothing has been charged.",
     checking: "Checking",
     looked: "Here's what I checked",
+    didYouMean: "Did you mean:",
+    addressOriginal: "You typed",
+    confirmYes: "Yes, use this",
+    confirmNo: "No, let me edit",
+    addressTitle: "Confirm your address",
+    slopeTitle: "One quick photo, please",
+    slopeBody:
+      "Snap a shot that shows the slope of your yard — stairs, retaining walls, or terraces — so the price stays accurate.",
+    slopeUpload: "Add a slope photo",
+    exactTitle: "Your exact price",
+    exactCaveat: "Final price confirmed on the first on-site visit.",
+    measureFirstTitle: "Let's measure your space first",
+    measureFirstBody:
+      "Confirm the maintained area on the map and we'll show the exact per-visit price.",
+    perMonth: "/ month",
+    includes: "Includes",
   },
   es: {
     starting: "desde",
@@ -72,6 +93,22 @@ const L = {
     handoffSub: "Este caso necesita atención humana — no se ha cobrado nada.",
     checking: "Revisando",
     looked: "Esto es lo que revisé",
+    didYouMean: "¿Quisiste decir:",
+    addressOriginal: "Escribiste",
+    confirmYes: "Sí, usar esta",
+    confirmNo: "No, déjame corregir",
+    addressTitle: "Confirma tu dirección",
+    slopeTitle: "Una foto rápida, por favor",
+    slopeBody:
+      "Toma una foto que muestre la pendiente del jardín — escaleras, muros de contención o terrazas — para mantener el precio exacto.",
+    slopeUpload: "Agregar foto de pendiente",
+    exactTitle: "Tu precio exacto",
+    exactCaveat: "El precio final se confirma en la primera visita en sitio.",
+    measureFirstTitle: "Primero midamos tu espacio",
+    measureFirstBody:
+      "Confirma el área de mantenimiento en el mapa y te mostraremos el precio exacto por visita.",
+    perMonth: "/ mes",
+    includes: "Incluye",
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
@@ -340,6 +377,190 @@ export function ConfirmationCard({ lang, r }: { lang: Lang; r: ConfirmBookingRes
             {r.slot.date} · {new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }).format(new Date(r.slot.startTime))}
           </div>
         </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ── address confirmation (validate_address — needs_confirm verdict) ─────────────
+// Google Address Validation came back CORRECTED — the model has a standardized
+// "did you mean" and asks the customer to confirm before any pricing happens
+// (hard rule: no scheduling without a confirmed address).
+export function AddressConfirmCard({
+  result,
+  lang,
+  onConfirm,
+}: {
+  result: ValidateAddressToolResult;
+  lang: Lang;
+  onConfirm: (useStandardized: boolean) => void;
+}) {
+  const t = L[lang];
+  if (result.status !== "needs_confirm" || !result.didYouMean) return null;
+  return (
+    <Shell>
+      <div className="flex items-center gap-3 border-b border-moss-100 bg-paper/40 px-4 py-3">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-moss-100 text-moss-700">
+          <MapPin className="h-4 w-4" strokeWidth={2} />
+        </span>
+        <div className="font-display text-[15px] text-bark-900">{t.addressTitle}</div>
+      </div>
+      <div className="space-y-3 px-4 py-3">
+        {result.original && (
+          <div className="text-[11px] text-moss-700/70">
+            <span className="uppercase tracking-[0.14em]">{t.addressOriginal}:</span>{" "}
+            <span className="font-sans italic text-moss-800/80">{result.original}</span>
+          </div>
+        )}
+        <div className="rounded-xl border border-moss-200 bg-paper/60 px-3 py-2.5">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
+            {t.didYouMean}
+          </div>
+          <div className="mt-0.5 font-display text-[15px] leading-snug text-bark-900">
+            {result.didYouMean}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onConfirm(true)}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-moss-700 px-3 py-2 text-[12.5px] font-medium text-moss-50 shadow-petal transition hover:bg-moss-800"
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+            {t.confirmYes}
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(false)}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-moss-200 bg-paper px-3 py-2 text-[12.5px] font-medium text-moss-800 transition hover:bg-moss-50"
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={2} />
+            {t.confirmNo}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ── slope photo prompt — warm nudge before exact price (spec §A.4) ──────────────
+// Pricing is measured-area × slope multiplier. If the photos didn't show a clear
+// slope signal, we ask for one before locking the exact number. Reuses the
+// existing photo affordance — the user already knows how to upload here.
+export function SlopePhotoPromptCard({
+  lang,
+  onUpload,
+}: {
+  lang: Lang;
+  onUpload?: () => void;
+}) {
+  const t = L[lang];
+  return (
+    <Shell>
+      <div className="flex items-start gap-3 px-4 py-4">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-moss-100 text-moss-700">
+          <Mountain className="h-5 w-5" strokeWidth={2} />
+        </span>
+        <div className="flex-1">
+          <div className="font-display text-[17px] text-bark-900">{t.slopeTitle}</div>
+          <div className="mt-1 text-[12.5px] leading-snug text-moss-800/80">{t.slopeBody}</div>
+          {onUpload && (
+            <button
+              type="button"
+              onClick={onUpload}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-moss-200 bg-paper px-3 py-1.5 text-[12px] font-medium text-moss-800 shadow-petal transition hover:bg-moss-50"
+            >
+              <Camera className="h-3.5 w-3.5" strokeWidth={2} />
+              {t.slopeUpload}
+            </button>
+          )}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+// ── exact price (compute_exact_price — spec §A.4) ───────────────────────────────
+// ONE exact per-visit number derived from confirmed_sqft × slope_tier (NOT a range —
+// the range surface is QuoteCard). Final confirmation still happens on-site.
+export function ExactPriceCard({
+  result,
+  lang,
+}: {
+  result: ComputeExactPriceResult;
+  lang: Lang;
+}) {
+  const t = L[lang];
+  if (result.status === "missing_measurement") {
+    return (
+      <Shell>
+        <div className="flex items-start gap-3 px-4 py-4">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <MapPin className="h-5 w-5" strokeWidth={2} />
+          </span>
+          <div>
+            <div className="font-display text-[17px] text-bark-900">{t.measureFirstTitle}</div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-moss-800/80">
+              {t.measureFirstBody}
+            </div>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+  const inclusions = result.tier_inclusions.slice(0, 5);
+  return (
+    <Shell>
+      <div className="flex items-baseline justify-between gap-3 border-b border-moss-100 bg-paper/40 px-4 py-3">
+        <div>
+          <div className="font-display text-[17px] text-bark-900">{result.tier_name}</div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
+            {t.exactTitle}
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="font-display text-3xl font-medium leading-none text-bark-900">
+            {money(result.perVisit)}
+          </div>
+          <div className="mt-1 text-[11px] text-moss-700/60">{t.perVisit}</div>
+        </div>
+      </div>
+      <div className="px-4 py-3">
+        <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+          <span className="text-moss-700/80">{t.monthly}</span>
+          <span className="font-medium text-bark-900">
+            {money(result.monthly)}{" "}
+            <span className="text-[10.5px] text-moss-700/60">{t.perMonth}</span>
+          </span>
+        </div>
+        {inclusions.length > 0 && (
+          <div className="mt-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
+              {t.includes}
+            </div>
+            <ul className="mt-1.5 space-y-1">
+              {inclusions.map((inc) => (
+                <li
+                  key={inc}
+                  className="flex gap-1.5 text-[12px] leading-snug text-moss-800/85"
+                >
+                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-moss-500" strokeWidth={2.5} />
+                  <span>{inc}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button
+          type="button"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-moss-700 px-4 py-2.5 text-[13px] font-medium text-moss-50 shadow-petal transition hover:bg-moss-800"
+        >
+          <CreditCard className="h-4 w-4" strokeWidth={2} />
+          {t.pay}
+        </button>
+      </div>
+      <div className="border-t border-moss-100 px-4 py-2 text-[10.5px] italic text-moss-700/55">
+        {t.exactCaveat}
       </div>
     </Shell>
   );

@@ -13,7 +13,12 @@ export interface YardAssessment {
   overgrowth: "low" | "med" | "high";
   cleanup_required: boolean;
   detected_extras: string[];
-  yard_size_estimate: "small" | "medium" | "large";
+  slope_signals: {
+    stairs_visible: boolean;
+    retaining_wall_visible: boolean;
+    terraces_visible: boolean;
+    steepness_hint: "none" | "moderate" | "steep";
+  };
   confidence: number;
 }
 
@@ -22,7 +27,9 @@ export interface YardAssessment {
 export function visionFallback(): YardAssessment {
   return {
     condition_score: 6, overgrowth: "med", cleanup_required: false,
-    detected_extras: [], yard_size_estimate: "medium", confidence: 0.8,
+    detected_extras: [],
+    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    confidence: 0.8,
   };
 }
 

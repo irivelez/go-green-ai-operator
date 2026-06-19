@@ -355,11 +355,15 @@ export const CLEANUP_GATING_ADDON_ID = "one-time-cleanup";
 // 4. VISION
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type YardSize = "small" | "medium" | "large";
 export type Intensity = "low" | "medium" | "high";
 
 export interface VisionAssessment {
-  yard_size_estimate: YardSize;
+  slope_signals: {
+    stairs_visible: boolean;
+    retaining_wall_visible: boolean;
+    terraces_visible: boolean;
+    steepness_hint: "none" | "moderate" | "steep";
+  };
   condition_score: number; // 0..10
   overgrowth: Intensity;
   weeds: Intensity;

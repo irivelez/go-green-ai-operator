@@ -17,11 +17,20 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { geoQualify, scoreLead } from "./qualify";
-import { priceCart } from "./pricing";
-import { analyzeYardPhotos } from "./vision";
+import { priceCart, pricePerVisit } from "./pricing";
+import { analyzeYardPhotos, isAllowedPhoto } from "./vision";
 import { availableSlots, bookSlot } from "./scheduler";
 import { createSubscriptionCheckout } from "./stripe";
 import { upsertLead, getLead } from "./store";
+import {
+  validateAddress,
+  autoMeasureRoofBbox,
+  estimateLotSqft,
+  slopeGradeTier,
+  computePolygonSqft,
+  measureFromAddress,
+} from "./geo";
+import { createCrewEvent } from "./calendar";
 import {
   PRICE_BOOK,
   monthlyFromVisit,
@@ -172,6 +181,10 @@ export interface ProposeCheckoutResult {
   url?: string; // Stripe Checkout URL — only when a key is configured
   sessionId?: string;
   fixedAddOnIds?: string[];
+  // Measured area×slope per-visit USD when the lead has been measured. Forwarded
+  // to createSubscriptionCheckout so Stripe charges THIS number (review blocker
+  // A) — the same one shown on ExactPriceCard. Undefined → legacy flat path.
+  measuredPerVisit?: number;
 }
 
 export function runProposeCheckout(
@@ -194,6 +207,10 @@ export function runProposeCheckout(
     return { status: "missing_photos", message: "Photos are required before autonomous checkout." };
   }
 
+  // priceCart is still used for the add-on resolution (fixed vs open-ended,
+  // catalog lookup, validation) — only the recurring side switches to the
+  // measured number when the lead has been measured. Open-ended add-ons stay
+  // out of the charged total in either path.
   let pricing: PricingResult;
   try {
     pricing = priceCart({ tier: args.tier, frequency: args.frequency, addOnIds: args.addOnIds });
@@ -201,13 +218,34 @@ export function runProposeCheckout(
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
   }
 
+  // REVIEW BLOCKER A — charge MUST match the quote. When the lead has been
+  // measured (confirm_area ran), the recurring price is the same area×slope
+  // pricePerVisit number ExactPriceCard shows the customer; otherwise fall back
+  // to the legacy flat PRICE_BOOK path so operator.ts + non-measured flows stay
+  // intact.
+  let measuredPerVisit: number | undefined;
+  let monthlyRecurring = pricing.monthlyRecurring;
+  if (lead.confirmed_sqft && lead.confirmed_sqft > 0 && lead.slope_tier) {
+    const measured = pricePerVisit({
+      measured_area_sqft: lead.confirmed_sqft,
+      slope_tier: lead.slope_tier,
+      frequency: args.frequency,
+    });
+    measuredPerVisit = measured.perVisit;
+    monthlyRecurring = measured.monthly;
+  }
+
   const fixedAddOnIds = args.addOnIds.filter((id) => addOnById(id)?.kind === "fixed");
+  const fixedSum = pricing.fixedAddOnLineItems.reduce((s, x) => s + x.amount, 0);
+  const amount = Math.round((monthlyRecurring + fixedSum) * 100) / 100;
+
   const base: ProposeCheckoutResult = {
     status: "ready",
-    amount: pricing.firstChargeTotal,
-    monthlyRecurring: pricing.monthlyRecurring,
+    amount,
+    monthlyRecurring,
     currency: "USD",
     fixedAddOnIds,
+    measuredPerVisit,
   };
 
   // No Stripe key (local/dev) → expose the authoritative amount but make clear we
@@ -264,7 +302,354 @@ export function runConfirmBooking(
       crewSize: result.slot.crewSize,
     },
   });
+  // Fire-and-forget crew handoff (spec §A.5). Calendar failure MUST NOT fail the booking;
+  // createCrewEvent never throws, but we wrap in .catch as a belt-and-suspenders guard.
+  void createCrewEvent({
+    lead_id: ctx.leadId,
+    address: lead.address ?? "",
+    sqft: lead.confirmed_sqft ?? lead.estimated_sqft ?? 0,
+    slope_tier: lead.slope_tier ?? "flat",
+    tier_name: lead.suggested_package ?? "Maintenance",
+    start_iso: result.slot.startTime,
+    end_iso: result.slot.endTime,
+    paid: true,
+  })
+    .then((r) => {
+      if (r.eventId) {
+        const fresh = getLead(ctx.leadId);
+        upsertLead({
+          lead_id: ctx.leadId,
+          channel: lead.channel,
+          work_order: { ...(fresh?.work_order ?? {}), calendar_event_id: r.eventId },
+        });
+      }
+    })
+    .catch(() => {});
   return { status: "booked", slot: result.slot };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// validate_address — Google Address Validation pipeline, key-guarded
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ValidateAddressToolResult {
+  status: "validated" | "needs_confirm" | "unvalidatable" | "error";
+  standardized?: string;
+  lat?: number;
+  lng?: number;
+  didYouMean?: string;
+  original?: string;
+  reason?: string;
+}
+
+export async function runValidateAddress(
+  ctx: ToolContext,
+  args: { addressLines: string[]; locality: string; adminArea: string; postalCode: string },
+): Promise<ValidateAddressToolResult> {
+  const res = await validateAddress(args);
+
+  // Any non-success verdict (error / UNVALIDATABLE) MUST clear previously-persisted
+  // parts + coords. Otherwise a customer who corrected address A, then re-typed
+  // garbage, leaves A's parts on the lead — and a loosely-ordered LLM could measure
+  // the WRONG parcel. Wrong-parcel is worse than no-parcel (it silently prices the
+  // wrong lot). Clearing forces the heuristic/draw fallback until a clean validate.
+  const clearStaleGeo = () => {
+    const existing = getLead(ctx.leadId);
+    if (
+      !existing?.address_number &&
+      !existing?.street_name &&
+      !existing?.street_type &&
+      existing?.lat === undefined &&
+      existing?.lng === undefined
+    )
+      return;
+    upsertLead({
+      lead_id: ctx.leadId,
+      channel: existing?.channel ?? "form",
+      address_number: undefined,
+      street_name: undefined,
+      street_type: undefined,
+      lat: undefined,
+      lng: undefined,
+    });
+  };
+
+  if (!res.ok) {
+    clearStaleGeo();
+    return { status: "error", reason: res.reason };
+  }
+  const original = [args.addressLines.join(" "), args.locality, args.adminArea, args.postalCode]
+    .filter(Boolean)
+    .join(", ");
+  if (res.verdict === "VALIDATED" || res.verdict === "CORRECTED") {
+    const existing = getLead(ctx.leadId);
+    upsertLead({
+      lead_id: ctx.leadId,
+      channel: existing?.channel ?? "form",
+      address: res.verdict === "VALIDATED" ? res.standardized.formattedAddress : existing?.address,
+      address_number: res.parts?.addressNumber,
+      street_name: res.parts?.streetName,
+      street_type: res.parts?.streetType,
+      lat: res.standardized.lat,
+      lng: res.standardized.lng,
+    });
+    if (res.verdict === "VALIDATED") {
+      return {
+        status: "validated",
+        standardized: res.standardized.formattedAddress,
+        lat: res.standardized.lat,
+        lng: res.standardized.lng,
+      };
+    }
+    return {
+      status: "needs_confirm",
+      didYouMean: res.didYouMean ?? res.standardized.formattedAddress,
+      original,
+    };
+  }
+  clearStaleGeo();
+  return { status: "unvalidatable" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// measure_property — DataSF parcel outline + condo detect (§A.2) + Elevation slope
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Primary path is the real SF parcel polygon (measureFromAddress): the customer
+// gets the actual lot pre-drawn for one-tap confirm. A stacked-condo parcel
+// (mapblklot != blklot) is genuinely ambiguous ownership → shared_multi_unit so
+// the agent escalates (§A.2 / §12.2). When the address has no parcel match
+// (single-family geocode/EAS miss) we fall back to the Solar+heuristic estimate
+// so the area card still has a starting number; the customer draws either way.
+
+export interface MeasurePropertyResult {
+  estimated_sqft: number;
+  area_confidence: number;
+  parcel_ring: { lat: number; lng: number }[];
+  area_source: "parcel" | "heuristic" | "none";
+  shared_multi_unit: boolean;
+  slope_tier: "flat" | "moderate" | "steep";
+  max_grade_pct: number | null;
+}
+
+export async function runMeasureProperty(
+  ctx: ToolContext,
+  args: { lat: number; lng: number },
+): Promise<MeasurePropertyResult> {
+  const leadForParcel = getLead(ctx.leadId);
+  const lat = typeof leadForParcel?.lat === "number" ? leadForParcel.lat : args.lat;
+  const lng = typeof leadForParcel?.lng === "number" ? leadForParcel.lng : args.lng;
+
+  const slope = await slopeGradeTier(lat, lng);
+  const slope_tier: "flat" | "moderate" | "steep" = slope.ok ? slope.slope_tier : "flat";
+  const max_grade_pct = slope.ok ? slope.max_grade_pct : null;
+
+  let parcel_ring: { lat: number; lng: number }[] = [];
+  let area_source: MeasurePropertyResult["area_source"] = "none";
+  let shared_multi_unit = false;
+  let estimated_sqft = 0;
+  let area_confidence = 0.4;
+
+  const parcel =
+    leadForParcel?.address_number && leadForParcel?.street_name && leadForParcel?.street_type
+      ? await measureFromAddress({
+          addressNumber: leadForParcel.address_number,
+          streetName: leadForParcel.street_name,
+          streetType: leadForParcel.street_type,
+        })
+      : { ok: false as const, reason: "missing_address_parts" };
+
+  if (parcel.ok && parcel.shared_multi_unit) {
+    shared_multi_unit = true;
+  } else if (parcel.ok && parcel.parcel_ring.length >= 3) {
+    parcel_ring = parcel.parcel_ring;
+    area_source = "parcel";
+    estimated_sqft = computePolygonSqft(parcel_ring);
+    area_confidence = 0.85;
+  } else {
+    const roof = await autoMeasureRoofBbox(lat, lng);
+    if (roof.ok) {
+      const est = estimateLotSqft(roof.roof_area_m2);
+      estimated_sqft = est.estimated_sqft;
+      area_confidence = est.area_confidence;
+      area_source = "heuristic";
+    }
+  }
+
+  const existing = getLead(ctx.leadId);
+  const prevVision = (existing?.vision_assessment ?? {}) as Record<string, unknown>;
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: existing?.channel ?? "form",
+    estimated_sqft,
+    area_confidence,
+    slope_tier,
+    slope_source: "elevation",
+    vision_assessment: { ...prevVision, parcel_ring },
+  });
+
+  return {
+    estimated_sqft,
+    area_confidence,
+    parcel_ring,
+    area_source,
+    shared_multi_unit,
+    slope_tier,
+    max_grade_pct,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// confirm_area — server re-derives sqft from polygon path; raises slope on photo hint
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Plausibility ceiling for a residential lot in SF — 60000 sqft ≈ 1.4 acres,
+// well above any single-family parcel. Above this the polygon is either a
+// drawing mistake or an attempt to trick a downstream area×price calc into a
+// huge subscription. Below or equal to 0 is a degenerate ring. Either case →
+// refuse to persist, ask the customer to redraw. The deterministic engine
+// (priceCart / pricePerVisit) never sees the bad number.
+const MAX_RESIDENTIAL_SQFT = 60000;
+
+export type ConfirmAreaResult =
+  | {
+      status: "confirmed";
+      confirmed_sqft: number;
+      area_source: "auto" | "customer_draw";
+      slope_tier: "flat" | "moderate" | "steep";
+      slope_source: "elevation" | "photo_raised";
+    }
+  | {
+      status: "area_out_of_range";
+      confirmed_sqft: number;
+      message: string;
+    }
+  | {
+      status: "lead_missing";
+      confirmed_sqft: number;
+      message: string;
+    };
+
+const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
+  flat: "moderate",
+  moderate: "steep",
+};
+
+export function runConfirmArea(
+  ctx: ToolContext,
+  args: { path: { lat: number; lng: number }[] },
+): ConfirmAreaResult {
+  const confirmed_sqft = computePolygonSqft(args.path);
+  const existing = getLead(ctx.leadId);
+
+  if (confirmed_sqft <= 0 || confirmed_sqft > MAX_RESIDENTIAL_SQFT) {
+    return {
+      status: "area_out_of_range",
+      confirmed_sqft,
+      message:
+        confirmed_sqft <= 0
+          ? "The polygon you drew is empty — please re-draw the maintained area."
+          : `The polygon you drew is ${confirmed_sqft.toLocaleString()} sqft, which is well above any SF residential lot. Please re-draw just the maintained area.`,
+    };
+  }
+
+  // No measured lead in this store → measure_property never ran here (cross-route
+  // store split). Refuse to fabricate a lead with a DEFAULT flat slope: that would
+  // clobber the real (possibly steep) measurement and price a steep lot as flat.
+  // Loud lead_missing > silent wrong price; the client re-routes through the agent.
+  if (!existing) {
+    return {
+      status: "lead_missing",
+      confirmed_sqft,
+      message: "We lost track of your property measurement — let's re-check the address before pricing.",
+    };
+  }
+
+  const area_source: "auto" | "customer_draw" = args.path.length > 5 ? "customer_draw" : "auto";
+
+  let slope_tier: "flat" | "moderate" | "steep" = existing?.slope_tier ?? "flat";
+  let slope_source: "elevation" | "photo_raised" = existing?.slope_source ?? "elevation";
+
+  const vision = (existing?.vision_assessment ?? {}) as {
+    slope_signals?: { steepness_hint?: string };
+  };
+  const hint = vision.slope_signals?.steepness_hint;
+  const alreadyRaised = slope_source === "photo_raised";
+  if (hint === "steep" && !alreadyRaised && (slope_tier === "flat" || slope_tier === "moderate")) {
+    slope_tier = SLOPE_RAISE[slope_tier];
+    slope_source = "photo_raised";
+  }
+
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: existing?.channel ?? "form",
+    confirmed_sqft,
+    area_source,
+    area_confirmed_by_customer: true,
+    slope_tier,
+    slope_source,
+    // A re-draw changes the measured area → any previously computed price is now
+    // stale. Clear it so the agent must re-run compute_exact_price before checkout
+    // and the customer can never pay against an outdated quote.
+    per_visit_price: undefined,
+    monthly_price: undefined,
+  });
+
+  return { status: "confirmed", confirmed_sqft, area_source, slope_tier, slope_source };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// compute_exact_price — measured-area × slope deterministic price (spec §A.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ComputeExactPriceResult =
+  | { status: "missing_measurement"; message: string }
+  | {
+      status: "priced";
+      perVisit: number;
+      monthly: number;
+      tier_name: string;
+      tier_inclusions: string[];
+      currency: "USD";
+    };
+
+export function runComputeExactPrice(
+  ctx: ToolContext,
+  args: { tier: Tier; frequency: Frequency },
+): ComputeExactPriceResult {
+  const lead = getLead(ctx.leadId);
+  const sqft = lead?.confirmed_sqft;
+  if (!sqft || sqft <= 0) {
+    return {
+      status: "missing_measurement",
+      message:
+        "Confirm the maintained area on the map first — the price is derived from the measured sqft, not estimated.",
+    };
+  }
+  const r = pricePerVisit({
+    measured_area_sqft: sqft,
+    slope_tier: lead?.slope_tier ?? "flat",
+    frequency: args.frequency,
+  });
+  const spec = PRICE_BOOK[args.tier];
+  // Persist the priced numbers — propose_checkout / Stripe / dashboard now all
+  // read the SAME source of truth (review blocker A).
+  upsertLead({
+    lead_id: ctx.leadId,
+    channel: lead?.channel ?? "form",
+    per_visit_price: r.perVisit,
+    monthly_price: r.monthly,
+    suggested_package: spec.name,
+    desired_frequency: args.frequency,
+  });
+  return {
+    status: "priced",
+    perVisit: r.perVisit,
+    monthly: r.monthly,
+    tier_name: spec.name,
+    tier_inclusions: spec.includes.slice(0, 6),
+    currency: "USD",
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -313,7 +698,11 @@ export async function runAnalyzePhotos(
   const existing = getLead(ctx.leadId);
   // Prefer explicit urls; otherwise assess the photos already on the lead (the
   // client seeds them on upload, so the model needn't pass huge data: URLs).
-  const urls = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
+  // Filter through isAllowedPhoto so a prompt-injected http/file URL is neither
+  // sent to the model NOR persisted onto the lead (where a future renderer would
+  // fetch it) — closes the sibling exfil vector to the funnel-route photo filter.
+  const raw = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
+  const urls = raw.filter(isAllowedPhoto);
   const assessment = await analyzeYardPhotos(urls);
   upsertLead({
     lead_id: ctx.leadId,
@@ -374,9 +763,49 @@ export function buildTools(ctx: ToolContext) {
       execute: async (args) => runComputePricing(ctx, args),
     }),
 
+    validate_address: tool({
+      description:
+        "Validate and standardize the service address via Google Address Validation. Returns VALIDATED (persisted), needs_confirm (corrected — ask the customer to confirm the suggested standardization), or unvalidatable. Without a Google key returns a graceful error — never throws.",
+      parameters: z.object({
+        addressLines: z.array(z.string()).describe("Street address line(s), e.g. ['123 Main St']"),
+        locality: z.string().describe("City, e.g. 'San Francisco'"),
+        adminArea: z.string().describe("State, e.g. 'CA'"),
+        postalCode: z.string().describe("ZIP code, e.g. '94110'"),
+      }),
+      execute: async (args) => runValidateAddress(ctx, args),
+    }),
+
+    measure_property: tool({
+      description:
+        "Measure the property from the SF parcel map (DataSF): the real lot polygon for one-tap confirm, plus Elevation API slope tier. The validated address parts are read from the lead automatically — just pass lat/lng (they drive slope). Returns shared_multi_unit=true for a stacked condo (ambiguous ownership — you MUST raise_escalation, do NOT price). Falls back to a Solar+heuristic estimate when the address has no parcel match (single-family); the customer still confirms on the map. Persists estimated_sqft + slope on the lead.",
+      parameters: z.object({
+        lat: z.number().describe("Rooftop latitude from validate_address"),
+        lng: z.number().describe("Rooftop longitude from validate_address"),
+      }),
+      execute: async (args) => runMeasureProperty(ctx, args),
+    }),
+
+    confirm_area: tool({
+      description:
+        "Server re-derives the maintained area (sqft) from the customer's polygon — never trust a client-supplied number. If vision photos hinted at steep terrain and slope_tier is flat or moderate, the tier is raised one step (photo_raised). Persists confirmed_sqft + area_source + slope on the lead.",
+      parameters: z.object({
+        path: z
+          .array(z.object({ lat: z.number(), lng: z.number() }))
+          .describe("Polygon ring (unclosed); >5 points → treated as customer_draw"),
+      }),
+      execute: async (args) => runConfirmArea(ctx, args),
+    }),
+
+    compute_exact_price: tool({
+      description:
+        "Exact per-visit + monthly price from confirmed_sqft × slope_tier (area buckets + slope multiplier). Requires confirm_area to have run — otherwise returns missing_measurement. Final price is still confirmed on the first on-site visit.",
+      parameters: z.object({ tier: TierEnum, frequency: FrequencyEnum }),
+      execute: async (args) => runComputeExactPrice(ctx, args),
+    }),
+
     propose_checkout: tool({
       description:
-        "Stage checkout for the customer to pay (first month now to lock the booking). Requires a confirmed address and photos on file. This NEVER charges — it returns a secure Stripe Checkout link the customer clicks themselves.",
+        "Stage checkout for the customer to pay (first month now to lock the booking). Price derives from the lead's confirmed_sqft + slope (compute_exact_price), not the model. Requires a confirmed address and photos on file. This NEVER charges — it returns a secure Stripe Checkout link the customer clicks themselves.",
       parameters: z.object({
         tier: TierEnum,
         frequency: FrequencyEnum,
@@ -394,6 +823,7 @@ export function buildTools(ctx: ToolContext) {
             tier: args.tier,
             frequency: args.frequency,
             selectedAddOnIds: decision.fixedAddOnIds ?? [],
+            measuredPerVisit: decision.measuredPerVisit,
             customer: {
               name: args.name,
               email: args.email,

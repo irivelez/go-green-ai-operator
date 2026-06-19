@@ -5,6 +5,7 @@
 
 import { NextRequest } from "next/server";
 import { POST } from "../app/api/funnel/agent/route";
+import { Body, agentSystemPrompt } from "./funnel-agent-prompt";
 
 let pass = 0,
   fail = 0;
@@ -52,6 +53,39 @@ async function main() {
   {
     const res = await POST(makeReq({ messages: [] })); // missing leadId
     ok("returns 400", res.status === 400, `got ${res.status}`);
+  }
+
+  console.log("\n=== T13: Body schema accepts optional `intent` ad-param (back-compat) ===");
+  {
+    const withIntent = Body.safeParse({ messages: [], leadId: "i-1", language: "en", intent: "weekly_mowing" });
+    ok("Body accepts an object WITH intent", withIntent.success, withIntent.success ? "" : JSON.stringify(withIntent.error.issues));
+    const withoutIntent = Body.safeParse({ messages: [], leadId: "i-2", language: "en" });
+    ok("Body still accepts an object WITHOUT intent (back-compat)", withoutIntent.success);
+    const wrongType = Body.safeParse({ messages: [], leadId: "i-3", language: "en", intent: 123 });
+    ok("Body rejects non-string intent", !wrongType.success);
+  }
+
+  console.log("\n=== T13: agentSystemPrompt weaves the ad intent into a warm opener ===");
+  {
+    const promptWith = agentSystemPrompt("en", undefined, "weekly_mowing");
+    ok("opener mentions mowing", /mowing/i.test(promptWith), promptWith.slice(0, 200));
+    ok("opener mentions weekly", /weekly/i.test(promptWith));
+    ok("opener flags ad arrival", /ad/i.test(promptWith));
+
+    const promptBare = agentSystemPrompt("en", undefined);
+    ok("no intent → no ad opener line", !/arrived from an ad/i.test(promptBare));
+  }
+
+  console.log("\n=== T13: prompt encodes the new measure-before-price step order ===");
+  {
+    const p = agentSystemPrompt("en", undefined);
+    ok("step list calls validate_address", /validate_address/.test(p));
+    ok("step list calls measure_property", /measure_property/.test(p));
+    ok("step list calls confirm_area", /confirm_area/.test(p));
+    ok("step list calls compute_exact_price", /compute_exact_price/.test(p));
+    const measureIdx = p.indexOf("measure_property");
+    const priceIdx = p.indexOf("compute_exact_price");
+    ok("measure_property appears BEFORE compute_exact_price", measureIdx > 0 && measureIdx < priceIdx);
   }
 
   if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;

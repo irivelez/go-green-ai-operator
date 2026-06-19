@@ -1,117 +1,194 @@
-// Vision smoke test.
-//
-// - No ANTHROPIC_API_KEY → SKIP cleanly (exit 0). The shape of the module is
-//   still proven by the schema + sentinel checks below, which always run.
-// - With a key → fires one real Messages call against a public sample yard
-//   photo URL, prints the structured assessment, and asserts the schema
-//   parses.
+// Vision schema unit tests — TDD for T4: slope_signals replaces yard_size_estimate.
+// Run: npx tsx src/vision.test.ts
+// No external keys needed — tests the Zod schema only via __test__ export.
 
-import { analyzeYardPhotos, __test__ } from "./vision";
+import { analyzeYardPhotos, isAllowedPhoto, __test__ } from "./vision";
 import { ADD_ON_CATALOG } from "./contract";
 
-const SAMPLE_YARD_PHOTO_URL =
-  // Public Wikimedia photo: a residential backyard with lawn, hedges,
-  // shrubs — typical SF-ish residential scope. Stable URL.
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Backyard_with_swimming_pool.jpg/1280px-Backyard_with_swimming_pool.jpg";
+const { VisionAssessmentSchema } = __test__;
 
-function assert(cond: unknown, msg: string): asserts cond {
-  if (!cond) {
-    console.error(`ASSERT FAILED: ${msg}`);
-    process.exit(1);
+let pass = 0, fail = 0;
+const ok = (name: string, cond: boolean, detail = "") => {
+  console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
+  cond ? pass++ : fail++;
+};
+
+// ─── Shared valid base (fields that don't change) ────────────────────────────
+const BASE = {
+  condition_score: 7,
+  overgrowth: "low",
+  weeds: "low",
+  leaf_litter: "low",
+  cleanup_required: false,
+  cleanup_confidence: "low",
+  detected_extras: [],
+  recommended_tier: "signature",
+  confidence: 0.85,
+};
+
+console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_size_estimate ===");
+
+// (a) Valid object WITH slope_signals and WITHOUT yard_size_estimate → must parse OK
+{
+  const valid = {
+    ...BASE,
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "none",
+    },
+  };
+  const r = VisionAssessmentSchema.safeParse(valid);
+  ok("valid slope_signals object parses successfully", r.success,
+    r.success ? "" : r.error.message);
+}
+
+// (b) Object WITH stale yard_size_estimate and WITHOUT slope_signals → must FAIL
+{
+  const stale = {
+    ...BASE,
+    yard_size_estimate: "medium",
+  };
+  const r = VisionAssessmentSchema.safeParse(stale);
+  ok("stale yard_size_estimate (no slope_signals) is rejected", !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected");
+}
+
+// (c) slope_signals with all steepness_hint values accepted
+{
+  for (const hint of ["none", "moderate", "steep"] as const) {
+    const obj = {
+      ...BASE,
+      slope_signals: {
+        stairs_visible: true,
+        retaining_wall_visible: false,
+        terraces_visible: true,
+        steepness_hint: hint,
+      },
+    };
+    const r = VisionAssessmentSchema.safeParse(obj);
+    ok(`steepness_hint "${hint}" accepted`, r.success,
+      r.success ? "" : r.error.message);
   }
 }
 
-async function offlineChecks() {
-  // Sentinel: empty URL list returns confidence 0 honestly.
-  const empty = await analyzeYardPhotos([]);
-  assert(empty.confidence === 0, "empty url list must yield confidence 0");
-  assert(
-    empty.recommended_tier === "essential" ||
-      empty.recommended_tier === "signature" ||
-      empty.recommended_tier === "estate",
-    "sentinel tier must be in {essential,signature,estate}",
-  );
-
-  // Schema rejects hallucinated add-on ids.
-  const bad = __test__.VisionAssessmentSchema.safeParse({
-    yard_size_estimate: "medium",
-    condition_score: 6,
-    overgrowth: "low",
-    weeds: "low",
-    leaf_litter: "low",
-    cleanup_required: false,
-    cleanup_confidence: "low",
-    detected_extras: ["totally-made-up-addon"],
-    recommended_tier: "signature",
-    confidence: 0.8,
-  });
-  assert(!bad.success, "schema must reject unknown add-on ids");
-
-  // Schema rejects out-of-set tier.
-  const badTier = __test__.VisionAssessmentSchema.safeParse({
-    yard_size_estimate: "medium",
-    condition_score: 6,
-    overgrowth: "low",
-    weeds: "low",
-    leaf_litter: "low",
-    cleanup_required: false,
-    cleanup_confidence: "low",
-    detected_extras: [],
-    recommended_tier: "platinum",
-    confidence: 0.8,
-  });
-  assert(!badTier.success, "schema must reject tier outside {essential,signature,estate}");
-
-  // Schema accepts a valid whitelisted assessment.
-  const ok = __test__.VisionAssessmentSchema.safeParse({
-    yard_size_estimate: "medium",
-    condition_score: 7,
-    overgrowth: "low",
-    weeds: "low",
-    leaf_litter: "medium",
-    cleanup_required: false,
-    cleanup_confidence: "low",
-    detected_extras: [ADD_ON_CATALOG[0]!.id],
-    recommended_tier: "signature",
-    confidence: 0.82,
-  });
-  assert(ok.success, "schema must accept a valid assessment");
-
-  // extractJsonObject strips code fences.
-  const fenced = "```json\n{\"a\":1}\n```";
-  assert(
-    __test__.extractJsonObject(fenced).trim() === '{"a":1}',
-    "extractJsonObject must strip ```json fences",
-  );
+// (d) slope_signals with invalid steepness_hint → rejected
+{
+  const bad = {
+    ...BASE,
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "extreme", // not in enum
+    },
+  };
+  const r = VisionAssessmentSchema.safeParse(bad);
+  ok("invalid steepness_hint rejected", !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected");
 }
 
-async function liveCheck() {
-  console.log(`[vision.test] running live call with model = ${__test__.getVisionModel()}`);
-  console.log(`[vision.test] sample photo: ${SAMPLE_YARD_PHOTO_URL}`);
-  const start = Date.now();
-  const assessment = await analyzeYardPhotos([SAMPLE_YARD_PHOTO_URL]);
-  const elapsedMs = Date.now() - start;
-  console.log(`[vision.test] elapsed: ${elapsedMs}ms`);
-  console.log("[vision.test] structured assessment:");
-  console.log(JSON.stringify(assessment, null, 2));
+// (e) Missing slope_signals entirely → rejected
+{
+  const missing = { ...BASE };
+  const r = VisionAssessmentSchema.safeParse(missing);
+  ok("missing slope_signals rejected", !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected");
+}
 
-  // The schema MUST parse what analyzeYardPhotos returned (it already did
-  // internally on success; we double-check here to make the contract explicit).
-  const parsed = __test__.VisionAssessmentSchema.safeParse(assessment);
-  assert(parsed.success, `live response failed schema check: ${!parsed.success ? parsed.error.message : ""}`);
-  console.log("[vision.test] PASS — schema parsed cleanly");
+// (f) Schema still rejects hallucinated add-on ids (regression)
+{
+  const badAddon = {
+    ...BASE,
+    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    detected_extras: ["totally-made-up-addon"],
+  };
+  const r = VisionAssessmentSchema.safeParse(badAddon);
+  ok("schema still rejects unknown add-on ids", !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected");
+}
+
+// (g) Schema still rejects out-of-set tier (regression)
+{
+  const badTier = {
+    ...BASE,
+    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    recommended_tier: "platinum",
+  };
+  const r = VisionAssessmentSchema.safeParse(badTier);
+  ok("schema still rejects tier outside {essential,signature,estate}", !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected");
+}
+
+// (h) Schema accepts a valid whitelisted assessment with slope_signals (regression)
+{
+  const good = {
+    ...BASE,
+    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    detected_extras: [ADD_ON_CATALOG[0]!.id],
+  };
+  const r = VisionAssessmentSchema.safeParse(good);
+  ok("schema accepts valid assessment with whitelisted add-on", r.success,
+    r.success ? "" : r.error.message);
+}
+
+// (i) extractJsonObject strips code fences (regression)
+{
+  const fenced = "```json\n{\"a\":1}\n```";
+  ok("extractJsonObject strips ```json fences",
+    __test__.extractJsonObject(fenced).trim() === '{"a":1}');
+}
+
+console.log("\n=== SEC-C: isAllowedPhoto — only base64 image data: URIs reach the model ===");
+{
+  ok("data:image/png;base64,QQ== accepted",
+    isAllowedPhoto("data:image/png;base64,QQ==") === true);
+  ok("data:image/jpeg;base64,QQ== accepted",
+    isAllowedPhoto("data:image/jpeg;base64,QQ==") === true);
+  ok("data:image/webp;base64,QQ== accepted",
+    isAllowedPhoto("data:image/webp;base64,QQ==") === true);
+  ok("data:image/gif;base64,QQ== accepted",
+    isAllowedPhoto("data:image/gif;base64,QQ==") === true);
+
+  ok("http://169.254.169.254/ rejected (SSRF)",
+    isAllowedPhoto("http://169.254.169.254/") === false);
+  ok("https://evil.com/x.png rejected (exfil)",
+    isAllowedPhoto("https://evil.com/x.png") === false);
+  ok("data:text/html;base64,.. rejected (non-image mime)",
+    isAllowedPhoto("data:text/html;base64,QQ==") === false);
+  ok("data:image/svg+xml;base64,.. rejected (SVG → JS exec)",
+    isAllowedPhoto("data:image/svg+xml;base64,QQ==") === false);
+  ok("data:image/png URL without base64 marker rejected",
+    isAllowedPhoto("data:image/png,QQ==") === false);
+  ok("empty string rejected", isAllowedPhoto("") === false);
+  ok("file:///etc/passwd rejected", isAllowedPhoto("file:///etc/passwd") === false);
 }
 
 async function main() {
-  await offlineChecks();
-  console.log("[vision.test] offline schema/sentinel checks: PASS");
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log("[vision.test] SKIP: no key");
-    process.exit(0);
+  // (j) Sentinel: empty URL list returns confidence 0 (regression — no key needed)
+  {
+    const empty = await analyzeYardPhotos([]);
+    ok("empty url list yields confidence 0", empty.confidence === 0, `got ${empty.confidence}`);
+    ok("sentinel has slope_signals", "slope_signals" in empty, JSON.stringify(empty));
+    ok("sentinel slope_signals.steepness_hint is 'none'",
+      (empty as { slope_signals?: { steepness_hint?: string } }).slope_signals?.steepness_hint === "none");
   }
 
-  await liveCheck();
+  // (k) SEC-C regression: analyzeYardPhotos drops disallowed URLs BEFORE the
+  // Anthropic call. With ONLY a remote URL and no key, the sentinel still
+  // reports "no photos provided" (urls filtered to empty) — proving the
+  // remote URL never reached the network path.
+  {
+    delete process.env.ANTHROPIC_API_KEY;
+    const remoteOnly = await analyzeYardPhotos(["https://evil.com/x.png"]);
+    ok("remote URL filtered out → sentinel 'no photos provided'",
+      remoteOnly.confidence === 0 && (remoteOnly.notes ?? "").includes("no photos"),
+      `got notes=${remoteOnly.notes}`);
+  }
+
+  console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
+  process.exit(fail === 0 ? 0 : 1);
 }
 
 main().catch((err) => {

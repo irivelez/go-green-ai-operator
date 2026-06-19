@@ -15,12 +15,27 @@ export type LeadStatus =
   | "Ready to Schedule" | "Scheduled" | "Work Order Created"
   | "Needs Human Review" | "Not a Fit" | "Lost / No Response";
 
+export interface LeadEvent {
+  ts: string;
+  actor: "agent" | "owner" | "system";
+  action: string;
+  reason_code?: string;
+  corrected_value?: unknown;
+  agent_decision?: unknown;
+  inputs?: unknown;
+}
+
 export interface Lead {
   lead_id: string;
   name?: string;
   channel: "telegram" | "email" | "whatsapp" | "form";
   language?: "en" | "es";
   address?: string;
+  address_number?: string;
+  street_name?: string;
+  street_type?: string;
+  lat?: number;
+  lng?: number;
   zone?: string | null;
   property_type?: string;
   desired_frequency?: string;
@@ -38,7 +53,23 @@ export interface Lead {
   internal_notes?: string;
   created_at: string;
   first_response_at?: string;
+  // Area + slope measurement (spec §A.6) — all optional, populated as the funnel learns.
+  estimated_sqft?: number;
+  confirmed_sqft?: number;
+  area_source?: "auto" | "customer_draw";
+  area_confidence?: number;
+  area_confirmed_by_customer?: boolean;
+  slope_tier?: "flat" | "moderate" | "steep";
+  slope_source?: "elevation" | "photo_raised";
+  // Measured-area × slope priced numbers (spec §A.4) — persisted by
+  // compute_exact_price so propose_checkout + Stripe + dashboard agree on ONE
+  // source of truth. Stripe charges per_visit_price × FREQUENCY_MULTIPLIER, NOT
+  // the flat PRICE_BOOK[tier].perVisit (review blocker A).
+  per_visit_price?: number;
+  monthly_price?: number;
+  intent?: string;
   _actions: string[]; // idempotency ledger of (action_hash)
+  events?: LeadEvent[]; // HITL learning loop — owner corrections + agent decisions
 }
 
 interface DB { leads: Record<string, Lead>; }
@@ -92,7 +123,7 @@ export function upsertLead(
   const db = load();
   const existing = db.leads[fields.lead_id];
   const lead: Lead = {
-    photos: [], status: "New Lead", created_at: new Date().toISOString(), _actions: [],
+    photos: [], status: "New Lead", created_at: new Date().toISOString(), _actions: [], events: [],
     ...existing, ...fields,
   } as Lead;
   db.leads[lead.lead_id] = lead;
@@ -106,6 +137,26 @@ export function getLead(lead_id: string): Lead | undefined {
 
 export function allLeads(): Lead[] {
   return Object.values(load().leads).sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+// HITL learning loop (spec §A.6): append a structured event to a lead's timeline.
+// Owner corrections, agent decisions, system notes — durable on the same store as the lead.
+export function appendEvent(
+  lead_id: string,
+  event: Omit<LeadEvent, "ts"> & { ts?: string }
+): LeadEvent {
+  const stored: LeadEvent = { ...event, ts: event.ts ?? new Date().toISOString() };
+  const db = load();
+  const lead = db.leads[lead_id];
+  if (!lead) return stored; // no-op when lead absent — mirror actionSeen's defensive shape
+  if (!lead.events) lead.events = [];
+  lead.events.push(stored);
+  save(db);
+  return stored;
+}
+
+export function listEvents(lead_id: string): LeadEvent[] {
+  return load().leads[lead_id]?.events ?? [];
 }
 
 // Idempotency: returns true if this action already fired for this lead (§5).

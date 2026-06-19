@@ -4,7 +4,7 @@
 // text AND calls tools; each tool result renders as an interactive card (generative UI).
 // This replaces the old form-wizard + defanged-sidebar split.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
@@ -15,6 +15,10 @@ import type {
   ProposeCheckoutResult,
   ConfirmBookingResult,
   RaiseEscalationResult,
+  ValidateAddressToolResult,
+  MeasurePropertyResult,
+  ConfirmAreaResult,
+  ComputeExactPriceResult,
 } from "@/src/agent-tools";
 import {
   type Lang,
@@ -26,7 +30,12 @@ import {
   ConfirmationCard,
   EscalationCard,
   TraceChip,
+  AddressConfirmCard,
+  SlopePhotoPromptCard,
+  ExactPriceCard,
 } from "./cards";
+import { AreaConfirmCard } from "./AreaConfirmCard";
+import type { LatLng } from "@/src/area-card-logic";
 
 const COPY = {
   en: {
@@ -45,6 +54,16 @@ const COPY = {
     finding: "Finding open visits",
     booking: "Locking your booking",
     routing: "Connecting you with a specialist",
+    validatingAddress: "Checking your address",
+    measuring: "Measuring your space",
+    confirmingArea: "Confirming the area",
+    exactPricing: "Calculating your exact price",
+    areaConfirmedChip: (n: number) => `Area confirmed — ${n.toLocaleString()} sqft`,
+    areaConfirmedMessage: (n: number) =>
+      `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
+    areaPostFailed: "I couldn't save the area — let me try again in a moment.",
+    addressYes: "Yes, use that address.",
+    addressNo: "Let me re-enter my address.",
   },
   es: {
     greeting:
@@ -62,6 +81,16 @@ const COPY = {
     finding: "Buscando visitas disponibles",
     booking: "Confirmando tu reserva",
     routing: "Conectándote con un especialista",
+    validatingAddress: "Verificando tu dirección",
+    measuring: "Midiendo tu espacio",
+    confirmingArea: "Confirmando el área",
+    exactPricing: "Calculando tu precio exacto",
+    areaConfirmedChip: (n: number) => `Área confirmada — ${n.toLocaleString()} pies²`,
+    areaConfirmedMessage: (n: number) =>
+      `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
+    areaPostFailed: "No pude guardar el área — déjame intentarlo de nuevo.",
+    addressYes: "Sí, usa esa dirección.",
+    addressNo: "Déjame corregir mi dirección.",
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
@@ -98,8 +127,12 @@ function textOf(m: Message): string {
 }
 
 export function GenerativeChat({ language }: { language: Lang }) {
-  const reactId = useId();
-  const leadIdRef = useRef<string>(`web-${reactId.replace(/[^a-zA-Z0-9]/g, "")}-${Date.now().toString(36)}`);
+  // Unguessable lead id (122-bit entropy). The leads/* routes are still
+  // unauthenticated (tenant isolation is the documented KNOWN GAP, AGENTS.md
+  // §1) — an enumerable id (useId + Date.now) would let an attacker walk every
+  // in-flight lead. Until owner-session authz lands, the id itself is the
+  // only thing keeping a stranger out of someone else's funnel.
+  const leadIdRef = useRef<string>(`web-${crypto.randomUUID()}`);
   const [photos, setPhotos] = useState<string[]>([]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -153,6 +186,10 @@ export function GenerativeChat({ language }: { language: Lang }) {
       case "offer_slots": return c.finding;
       case "confirm_booking": return c.booking;
       case "raise_escalation": return c.routing;
+      case "validate_address": return c.validatingAddress;
+      case "measure_property": return c.measuring;
+      case "confirm_area": return c.confirmingArea;
+      case "compute_exact_price": return c.exactPricing;
       default: return c.running;
     }
   };
@@ -177,7 +214,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
             key={key}
             lang={language}
             lines={[
-              `yard ${v.yard_size_estimate} · condition ${v.condition_score}/10`,
+              `slope ${v.slope_signals?.steepness_hint ?? "unknown"} · condition ${v.condition_score}/10`,
               `cleanup ${v.cleanup_required ? "recommended" : "not needed"}`,
               `suggested tier: ${v.recommended_tier}`,
               `confidence ${(v.confidence * 100).toFixed(0)}%`,
@@ -220,6 +257,82 @@ export function GenerativeChat({ language }: { language: Lang }) {
         return <ConfirmationCard key={key} lang={language} r={res as ConfirmBookingResult} />;
       case "raise_escalation":
         return <EscalationCard key={key} lang={language} r={res as RaiseEscalationResult} />;
+      case "validate_address": {
+        const r = res as ValidateAddressToolResult;
+        return (
+          <AddressConfirmCard
+            key={key}
+            result={r}
+            lang={language}
+            onConfirm={(useStd) => send(useStd ? c.addressYes : c.addressNo)}
+          />
+        );
+      }
+      case "measure_property": {
+        const r = res as MeasurePropertyResult;
+        // Center the satellite preview on the real parcel ring's centroid when we
+        // have one (DataSF outline); fall back to SF center for the blank-draw path.
+        const center: LatLng =
+          r.parcel_ring && r.parcel_ring.length >= 3
+            ? {
+                lat: r.parcel_ring.reduce((s, p) => s + p.lat, 0) / r.parcel_ring.length,
+                lng: r.parcel_ring.reduce((s, p) => s + p.lng, 0) / r.parcel_ring.length,
+              }
+            : { lat: 37.7749, lng: -122.4194 };
+        return (
+          <AreaConfirmCard
+            key={key}
+            result={r}
+            center={center}
+            lang={language}
+            onConfirm={async (path: LatLng[]) => {
+              // Polygon → dedicated endpoint (bypasses the LLM context; server
+              // re-derives the authoritative sqft from the raw ring). The chat
+              // message that follows is the customer's CONSENT cue so the LLM
+              // advances to compute_exact_price — the polygon itself never
+              // enters the model.
+              try {
+                const resp = await fetch("/api/funnel/confirm-area", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    leadId: leadIdRef.current,
+                    language,
+                    path,
+                  }),
+                });
+                if (!resp.ok) throw new Error(`confirm-area HTTP ${resp.status}`);
+                const data = (await resp.json()) as ConfirmAreaResult;
+                if (data.status === "area_out_of_range") {
+                  send(data.message);
+                } else {
+                  send(c.areaConfirmedMessage(data.confirmed_sqft));
+                }
+              } catch (err) {
+                // Surface a soft retry hint into the chat — never silent.
+                // eslint-disable-next-line no-console
+                console.error("[confirm-area] failed:", err);
+                send(c.areaPostFailed);
+              }
+            }}
+          />
+        );
+      }
+      case "confirm_area": {
+        const r = res as ConfirmAreaResult;
+        if (r.status === "area_out_of_range") return null;
+        return (
+          <div
+            key={key}
+            className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-moss-500" strokeWidth={2} />
+            {c.areaConfirmedChip(r.confirmed_sqft)}
+          </div>
+        );
+      }
+      case "compute_exact_price":
+        return <ExactPriceCard key={key} lang={language} result={res as ComputeExactPriceResult} />;
       default:
         return null;
     }
