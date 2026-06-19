@@ -87,7 +87,7 @@ There is **no "Google Earth measure" API** — that tool is manual desktop-only 
             area_confirmed_by_customer=true, parcel_blklot?
 ```
 
-**Maintainable-area rule (locked):** the priced area = the customer-confirmed polygon = all maintainable open space with the building footprint pre-subtracted. Not exact lawn/hardscape segmentation in V1 (Nearmap AI lawn-split is the paid precision upgrade). The customer trims driveways/paths on the map if they choose.
+**Maintainable-area rule (locked):** the priced area = the customer-confirmed polygon = all maintainable open space. V1 pre-draws the **real parcel ring** for one-tap confirm and renders the building footprint as a visible **trim overlay** the customer nudges the outline around — NOT a server-side polygon difference (clipping is a dependency + edge-case surface not worth it for a shape the customer edits anyway, since the confirmed polygon is always re-derived server-side as the authority). Not exact lawn/hardscape segmentation in V1 (Nearmap AI lawn-split is the paid precision upgrade). The customer trims driveways/paths/the house on the map.
 
 **The footprint is 2010-vintage and the address→parcel join is the weakest link** (corner + multi-unit lots) — both reasons the human confirm/redraw step is the load-bearing accuracy backstop, not the footprint table. The §A.5 first-visit on-site re-measure absorbs whatever the remote data misses.
 

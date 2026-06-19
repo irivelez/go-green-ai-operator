@@ -4,6 +4,7 @@
 import {
   getGoogleServerKey,
   getGoogleCalendarId,
+  getSocrataAppToken,
   isStripeLiveOK,
   getLotCoverageRatio,
   getAreaConfidenceThreshold,
@@ -99,6 +100,16 @@ console.log("\n=== Environment Helpers ===");
   process.env.GOOGLE_CALENDAR_ID = "test-calendar-id";
   const id = getGoogleCalendarId();
   ok("getGoogleCalendarId() returns value when set", id === "test-calendar-id", `got ${id}`);
+}
+
+{
+  delete process.env.SOCRATA_APP_TOKEN;
+  ok("getSocrataAppToken() returns undefined when unset", getSocrataAppToken() === undefined);
+}
+
+{
+  process.env.SOCRATA_APP_TOKEN = "tok_abc";
+  ok("getSocrataAppToken() returns value when set", getSocrataAppToken() === "tok_abc");
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

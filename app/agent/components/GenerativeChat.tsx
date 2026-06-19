@@ -270,15 +270,15 @@ export function GenerativeChat({ language }: { language: Lang }) {
       }
       case "measure_property": {
         const r = res as MeasurePropertyResult;
-        // Derive map center from roof_bbox midpoint when present; fall back to SF.
-        // (The bbox came from the deterministic Solar/Elevation pipeline, so it's
-        // the truthful anchor for the satellite preview.)
-        const center: LatLng = r.roof_bbox
-          ? {
-              lat: (r.roof_bbox.sw.lat + r.roof_bbox.ne.lat) / 2,
-              lng: (r.roof_bbox.sw.lng + r.roof_bbox.ne.lng) / 2,
-            }
-          : { lat: 37.7749, lng: -122.4194 };
+        // Center the satellite preview on the real parcel ring's centroid when we
+        // have one (DataSF outline); fall back to SF center for the blank-draw path.
+        const center: LatLng =
+          r.parcel_ring && r.parcel_ring.length >= 3
+            ? {
+                lat: r.parcel_ring.reduce((s, p) => s + p.lat, 0) / r.parcel_ring.length,
+                lng: r.parcel_ring.reduce((s, p) => s + p.lng, 0) / r.parcel_ring.length,
+              }
+            : { lat: 37.7749, lng: -122.4194 };
         return (
           <AreaConfirmCard
             key={key}

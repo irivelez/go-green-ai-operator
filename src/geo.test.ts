@@ -10,6 +10,7 @@ import {
   estimateLotSqft,
   slopeGradeTier,
   computePolygonSqft,
+  measureFromAddress,
 } from "./geo";
 
 let pass = 0, fail = 0;
@@ -190,6 +191,129 @@ console.log("\n=== Scenario 6: missing key → {ok:false, reason:'no_key'}, neve
   const sg = await slopeGradeTier(37.75, -122.42);
   ok("slopeGradeTier no_key", !sg.ok && sg.reason === "no_key", JSON.stringify(sg));
 
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 7: measureFromAddress → single-family parcel outline ===");
+{
+  // EAS returns one row (parcel_number = blklot, no separator); parcels returns
+  // mapblklot == blklot (single-family); footprint returns one MultiPolygon.
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) {
+      return { status: 200, body: [{ parcel_number: "3704018", block: "3704", lot: "018" }] };
+    }
+    if (url.includes("acdm-wktn") && url.includes(".geojson")) {
+      return {
+        status: 200,
+        body: {
+          features: [
+            {
+              geometry: {
+                type: "MultiPolygon",
+                coordinates: [[[
+                  [-122.42, 37.75],
+                  [-122.42, 37.7504],
+                  [-122.4195, 37.7504],
+                  [-122.4195, 37.75],
+                  [-122.42, 37.75],
+                ]]],
+              },
+              properties: { blklot: "3704018", mapblklot: "3704018" },
+            },
+          ],
+        },
+      };
+    }
+    if (url.includes("acdm-wktn")) {
+      return { status: 200, body: [{ blklot: "3704018", mapblklot: "3704018" }] };
+    }
+    if (url.includes("ynuv-fyni")) {
+      return { status: 200, body: { features: [] } };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await measureFromAddress({
+    addressNumber: "1450",
+    streetName: "PAGE",
+    streetType: "ST",
+  });
+  ok("ok:true", res.ok, JSON.stringify(res).slice(0, 160));
+  if (res.ok) {
+    ok("not a condo (single-family)", res.shared_multi_unit === false, String(res.shared_multi_unit));
+    ok("parcel ring returned (lat/lng)", Array.isArray(res.parcel_ring) && res.parcel_ring.length >= 3,
+       `len ${res.parcel_ring?.length}`);
+    ok("ring point is {lat,lng}", res.parcel_ring[0]?.lat === 37.75 && res.parcel_ring[0]?.lng === -122.42,
+       JSON.stringify(res.parcel_ring[0]));
+    ok("blklot threaded", res.blklot === "3704018", res.blklot);
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 8: measureFromAddress → condo (mapblklot ≠ blklot) → shared_multi_unit ===");
+{
+  // 488 Folsom: EAS blklot 3737084 → parcel mapblklot 3737042 (stacked condo).
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) {
+      return { status: 200, body: [{ parcel_number: "3737084", block: "3737", lot: "084" }] };
+    }
+    if (url.includes("acdm-wktn")) {
+      return { status: 200, body: [{ blklot: "3737084", mapblklot: "3737042" }] };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await measureFromAddress({
+    addressNumber: "488",
+    streetName: "FOLSOM",
+    streetType: "ST",
+  });
+  ok("ok:true", res.ok, JSON.stringify(res).slice(0, 160));
+  if (res.ok) {
+    ok("shared_multi_unit true (escalate)", res.shared_multi_unit === true, String(res.shared_multi_unit));
+    ok("no parcel ring needed for escalated condo", !res.parcel_ring || res.parcel_ring.length === 0,
+       `len ${res.parcel_ring?.length ?? 0}`);
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 9: measureFromAddress → no EAS match → fallback (blank-draw) ===");
+{
+  // 1450 Page genuinely absent from EAS → empty array → blank-draw fallback,
+  // NOT an error, NOT an escalation (§A.2 single-family no-match path).
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) return { status: 200, body: [] };
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await measureFromAddress({
+    addressNumber: "1450",
+    streetName: "PAGE",
+    streetType: "ST",
+  });
+  ok("ok:false with reason no_parcel_match", !res.ok && res.reason === "no_parcel_match", JSON.stringify(res));
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 10: measureFromAddress never throws on network error ===");
+{
+  // DataSF works WITHOUT a token (token only improves rate limits) — so unlike the
+  // Google no_key guard, measureFromAddress always attempts the call and must
+  // degrade gracefully (→ fallback), never throw, when the network fails.
+  delete process.env.SOCRATA_APP_TOKEN;
+  globalThis.fetch = (async () => {
+    throw new Error("simulated network failure");
+  }) as typeof fetch;
+
+  let threw = false;
+  let res: Awaited<ReturnType<typeof measureFromAddress>> | undefined;
+  try {
+    res = await measureFromAddress({ addressNumber: "1", streetName: "MAIN", streetType: "ST" });
+  } catch {
+    threw = true;
+  }
+  ok("never throws on network failure", !threw);
+  ok("returns ok:false fallback", !!res && !res.ok, JSON.stringify(res));
   restoreFetch();
 }
 

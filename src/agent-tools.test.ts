@@ -15,6 +15,7 @@ import {
   runConfirmBooking,
   runRaiseEscalation,
   runValidateAddress,
+  runMeasureProperty,
   runConfirmArea,
   runComputeExactPrice,
   runAnalyzePhotos,
@@ -33,6 +34,23 @@ const ok = (name: string, cond: boolean, detail = "") => {
 };
 const approxEq = (a: number, b: number, eps = 0.005) => Math.abs(a - b) < eps;
 const ctx = (leadId: string): ToolContext => ({ leadId, language: "en" });
+
+const realFetch = globalThis.fetch;
+function mockFetch(handler: (url: string) => { status: number; body: unknown }): void {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const { status, body } = handler(url);
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as Response;
+  }) as typeof fetch;
+}
+function restoreFetch(): void {
+  globalThis.fetch = realFetch;
+}
 
 async function main() {
 
@@ -190,6 +208,74 @@ console.log("\n=== T10.a: validate_address — no Google key → graceful error,
   ok("no_key → did not throw", !threw);
   ok("no_key → status 'error' (graceful)", result?.status === "error", JSON.stringify(result));
   ok("no_key → reason surfaced", typeof (result as { reason?: string })?.reason === "string");
+}
+
+console.log("\n=== T10.g: measure_property — single-family DataSF parcel ring → outline + no escalation ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L_M1", channel: "form" });
+  delete process.env.GOOGLE_MAPS_API_KEY; // slope/Solar key-guarded off; DataSF still runs
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) {
+      return { status: 200, body: [{ parcel_number: "3704018", block: "3704", lot: "018" }] };
+    }
+    if (url.includes("acdm-wktn") && url.includes(".geojson")) {
+      return {
+        status: 200,
+        body: {
+          features: [{
+            geometry: {
+              type: "MultiPolygon",
+              coordinates: [[[
+                [-122.42, 37.75], [-122.42, 37.7504],
+                [-122.4195, 37.7504], [-122.4195, 37.75], [-122.42, 37.75],
+              ]]],
+            },
+            properties: { blklot: "3704018", mapblklot: "3704018" },
+          }],
+        },
+      };
+    }
+    if (url.includes("acdm-wktn")) {
+      return { status: 200, body: [{ blklot: "3704018", mapblklot: "3704018" }] };
+    }
+    return { status: 200, body: {} };
+  });
+
+  const r = await runMeasureProperty(ctx("L_M1"), {
+    lat: 37.7502, lng: -122.4198,
+    addressNumber: "1450", streetName: "PAGE", streetType: "ST",
+  });
+  restoreFetch();
+  ok("area_source 'parcel'", r.area_source === "parcel", r.area_source);
+  ok("NOT shared_multi_unit", r.shared_multi_unit === false, String(r.shared_multi_unit));
+  ok("parcel_ring threaded to card", r.parcel_ring.length >= 3, `len ${r.parcel_ring.length}`);
+  ok("estimated_sqft re-derived from ring > 0", r.estimated_sqft > 0, String(r.estimated_sqft));
+}
+
+console.log("\n=== T10.h: measure_property — stacked condo (mapblklot≠blklot) → shared_multi_unit (escalate) ===");
+{
+  resetStore([]);
+  upsertLead({ lead_id: "L_M2", channel: "form" });
+  delete process.env.GOOGLE_MAPS_API_KEY;
+  mockFetch((url) => {
+    if (url.includes("ramy-di5m")) {
+      return { status: 200, body: [{ parcel_number: "3737084", block: "3737", lot: "084" }] };
+    }
+    if (url.includes("acdm-wktn")) {
+      return { status: 200, body: [{ blklot: "3737084", mapblklot: "3737042" }] };
+    }
+    return { status: 200, body: {} };
+  });
+
+  const r = await runMeasureProperty(ctx("L_M2"), {
+    lat: 37.7879, lng: -122.3944,
+    addressNumber: "488", streetName: "FOLSOM", streetType: "ST",
+  });
+  restoreFetch();
+  ok("shared_multi_unit true → agent must escalate", r.shared_multi_unit === true, String(r.shared_multi_unit));
+  ok("no parcel_ring for escalated condo", r.parcel_ring.length === 0, `len ${r.parcel_ring.length}`);
+  ok("area_source 'none' (no pricing for condo)", r.area_source === "none", r.area_source);
 }
 
 console.log("\n=== T10.b: confirm_area — re-derives sqft from path; client-supplied number ignored ===");

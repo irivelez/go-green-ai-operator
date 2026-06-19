@@ -258,6 +258,22 @@ const SCENARIOS: Scenario[] = [
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "property manager → escalation",
   },
+  {
+    id: "condo_multi_unit_en",
+    language: "en",
+    // Shared/multi-unit detection is a measure_property-time signal (mapblklot ≠
+    // blklot), so it only fires AFTER a successful validate→measure chain — which
+    // needs GOOGLE_MAPS_API_KEY. Without the key the model legitimately stalls at
+    // validate_address and can't reach the condo signal, so we CANNOT assert
+    // raise_escalation here. The deterministic mapblklot≠blklot → shared_multi_unit
+    // mechanic is locked in agent-tools.test.ts T10.h. The robust eval signal is the
+    // SAFETY invariant: a condo lead never auto-prices or auto-books (excludes-only).
+    userText: `Hi, I'd like garden maintenance for my condo unit #305 at ${SF_ADDR}. Biweekly please.`,
+    seedPhotos: false,
+    expectInclude: [],
+    expectExclude: ["propose_checkout", "confirm_booking", "compute_exact_price"],
+    note: "condo / shared multi-unit lot → never auto-price/auto-book (§A.2; escalation mechanic locked in T10.h)",
+  },
 
   // ── T15: measure-before-price (spec §A.1 / §A.4 invariant scenarios) ───────
   // These stress the NEW step order in funnel-agent-prompt.ts: validate_address

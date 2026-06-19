@@ -11,6 +11,17 @@ export function getGoogleServerKey(): string | undefined {
 }
 
 /**
+ * Get the DataSF Socrata app token (X-App-Token header).
+ * Spec: §A.2 — Socrata defaulted to SODA3 (Oct 2025) and throttles anonymous
+ * traffic; a free app token restores reliable throughput. Key-guarded like the
+ * Google key: missing token still attempts the anonymous SODA2 endpoint, and any
+ * throttle/failure falls through to the customer-draw fallback (never throws).
+ */
+export function getSocrataAppToken(): string | undefined {
+  return process.env.SOCRATA_APP_TOKEN;
+}
+
+/**
  * Get Google Calendar ID for crew handoff.
  * Spec: §A.5 — crew endpoint via Google Calendar event (Composio).
  */

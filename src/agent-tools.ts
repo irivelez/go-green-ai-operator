@@ -28,6 +28,7 @@ import {
   estimateLotSqft,
   slopeGradeTier,
   computePolygonSqft,
+  measureFromAddress,
 } from "./geo";
 import { createCrewEvent } from "./calendar";
 import {
@@ -375,35 +376,71 @@ export async function runValidateAddress(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// measure_property — Solar roof bbox → lot estimate + Elevation slope tier
+// measure_property — DataSF parcel outline + condo detect (§A.2) + Elevation slope
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Primary path is the real SF parcel polygon (measureFromAddress): the customer
+// gets the actual lot pre-drawn for one-tap confirm. A stacked-condo parcel
+// (mapblklot != blklot) is genuinely ambiguous ownership → shared_multi_unit so
+// the agent escalates (§A.2 / §12.2). When the address has no parcel match
+// (single-family geocode/EAS miss) we fall back to the Solar+heuristic estimate
+// so the area card still has a starting number; the customer draws either way.
 
 export interface MeasurePropertyResult {
   estimated_sqft: number;
   area_confidence: number;
-  roof_bbox: { sw: { lat: number; lng: number }; ne: { lat: number; lng: number } } | null;
+  parcel_ring: { lat: number; lng: number }[];
+  area_source: "parcel" | "heuristic" | "none";
+  shared_multi_unit: boolean;
   slope_tier: "flat" | "moderate" | "steep";
   max_grade_pct: number | null;
 }
 
 export async function runMeasureProperty(
   ctx: ToolContext,
-  args: { lat: number; lng: number },
+  args: {
+    lat: number;
+    lng: number;
+    addressNumber?: string;
+    streetName?: string;
+    streetType?: string;
+  },
 ): Promise<MeasurePropertyResult> {
-  const roof = await autoMeasureRoofBbox(args.lat, args.lng);
-  let estimated_sqft = 0;
-  let area_confidence = 0.4;
-  let roof_bbox: MeasurePropertyResult["roof_bbox"] = null;
-  if (roof.ok) {
-    const est = estimateLotSqft(roof.roof_area_m2);
-    estimated_sqft = est.estimated_sqft;
-    area_confidence = est.area_confidence;
-    roof_bbox = roof.roof_bbox;
-  }
-
   const slope = await slopeGradeTier(args.lat, args.lng);
   const slope_tier: "flat" | "moderate" | "steep" = slope.ok ? slope.slope_tier : "flat";
   const max_grade_pct = slope.ok ? slope.max_grade_pct : null;
+
+  let parcel_ring: { lat: number; lng: number }[] = [];
+  let area_source: MeasurePropertyResult["area_source"] = "none";
+  let shared_multi_unit = false;
+  let estimated_sqft = 0;
+  let area_confidence = 0.4;
+
+  const parcel =
+    args.addressNumber && args.streetName && args.streetType
+      ? await measureFromAddress({
+          addressNumber: args.addressNumber,
+          streetName: args.streetName,
+          streetType: args.streetType,
+        })
+      : { ok: false as const, reason: "missing_address_parts" };
+
+  if (parcel.ok && parcel.shared_multi_unit) {
+    shared_multi_unit = true;
+  } else if (parcel.ok && parcel.parcel_ring.length >= 3) {
+    parcel_ring = parcel.parcel_ring;
+    area_source = "parcel";
+    estimated_sqft = computePolygonSqft(parcel_ring);
+    area_confidence = 0.85;
+  } else {
+    const roof = await autoMeasureRoofBbox(args.lat, args.lng);
+    if (roof.ok) {
+      const est = estimateLotSqft(roof.roof_area_m2);
+      estimated_sqft = est.estimated_sqft;
+      area_confidence = est.area_confidence;
+      area_source = "heuristic";
+    }
+  }
 
   const existing = getLead(ctx.leadId);
   const prevVision = (existing?.vision_assessment ?? {}) as Record<string, unknown>;
@@ -414,10 +451,18 @@ export async function runMeasureProperty(
     area_confidence,
     slope_tier,
     slope_source: "elevation",
-    vision_assessment: { ...prevVision, roof_bbox },
+    vision_assessment: { ...prevVision, parcel_ring },
   });
 
-  return { estimated_sqft, area_confidence, roof_bbox, slope_tier, max_grade_pct };
+  return {
+    estimated_sqft,
+    area_confidence,
+    parcel_ring,
+    area_source,
+    shared_multi_unit,
+    slope_tier,
+    max_grade_pct,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -681,10 +726,13 @@ export function buildTools(ctx: ToolContext) {
 
     measure_property: tool({
       description:
-        "Auto-measure the property: Solar API for roof bbox → maintainable lot sqft (heuristic), Elevation API for slope tier (flat/moderate/steep). Persists estimated_sqft + area_confidence + slope_tier on the lead. Key-guarded — without a Google key returns zero-confidence defaults.",
+        "Measure the property from the SF parcel map (DataSF): the real lot polygon for one-tap confirm, plus Elevation API slope tier. Pass the address parts (number/street/type) from the validated address so the parcel join can run; lat/lng drive slope. Returns shared_multi_unit=true for a stacked condo (ambiguous ownership — you MUST raise_escalation, do NOT price). Falls back to a Solar+heuristic estimate when the address has no parcel match (single-family); the customer still confirms on the map. Persists estimated_sqft + slope on the lead.",
       parameters: z.object({
         lat: z.number().describe("Rooftop latitude from validate_address"),
         lng: z.number().describe("Rooftop longitude from validate_address"),
+        addressNumber: z.string().optional().describe("Street number, e.g. '488'"),
+        streetName: z.string().optional().describe("Street name only, e.g. 'FOLSOM'"),
+        streetType: z.string().optional().describe("Street type, e.g. 'ST', 'AVE'"),
       }),
       execute: async (args) => runMeasureProperty(ctx, args),
     }),

@@ -29,7 +29,6 @@ import {
   pickInitialPath,
   M2_TO_SQFT,
   type LatLng,
-  type RoofBbox,
 } from "@/src/area-card-logic";
 import type { Lang } from "./cards";
 
@@ -56,12 +55,14 @@ const L = {
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
-// Mirrors what runMeasureProperty returns (kept loose here so T14 can drop it
-// straight in without an import-cycle).
+// Mirrors what runMeasureProperty returns (kept loose here so it drops in
+// without an import-cycle).
 export interface AreaConfirmResult {
   estimated_sqft: number;
   area_confidence: number;
-  roof_bbox: RoofBbox;
+  parcel_ring: LatLng[];
+  area_source: "parcel" | "heuristic" | "none";
+  shared_multi_unit: boolean;
   slope_tier: "flat" | "moderate" | "steep";
   max_grade_pct: number | null;
 }
@@ -70,8 +71,6 @@ interface AreaConfirmCardProps {
   result: AreaConfirmResult;
   center: LatLng;
   lang: Lang;
-  /** Defaults to env.getAreaConfidenceThreshold() server-side value, 0.6. */
-  threshold?: number;
   /** Customer-confirmed polygon. Server is authoritative; this is the proposal. */
   onConfirm: (path: LatLng[]) => void;
 }
@@ -96,14 +95,13 @@ export function AreaConfirmCard(props: AreaConfirmCardProps) {
 }
 
 // ── interactive map surface (requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) ──────
-function MapSurface({ result, center, lang, threshold, onConfirm }: AreaConfirmCardProps) {
+function MapSurface({ result, center, lang, onConfirm }: AreaConfirmCardProps) {
   const t = L[lang];
-  const thr = threshold ?? 0.6;
   const geometry = useMapsLibrary("geometry");
 
   const initialPath = useMemo(
-    () => pickInitialPath(result.roof_bbox, result.area_confidence, thr),
-    [result.roof_bbox, result.area_confidence, thr],
+    () => pickInitialPath(result.parcel_ring),
+    [result.parcel_ring],
   );
 
   const [path, setPath] = useState<LatLng[]>(initialPath);
