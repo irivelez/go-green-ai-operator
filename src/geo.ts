@@ -25,14 +25,63 @@ export interface ValidateAddressInput {
   sessionToken?: string;
 }
 
+export interface AddressParts {
+  addressNumber: string;
+  streetName: string;
+  streetType: string;
+}
+
 export type ValidateAddressResult =
   | {
       ok: true;
       verdict: "VALIDATED" | "CORRECTED" | "UNVALIDATABLE";
       standardized: { formattedAddress: string; lat: number; lng: number; accuracy: string };
+      parts?: AddressParts;
       didYouMean?: string;
     }
   | { ok: false; reason: string };
+
+const STREET_TYPE_ABBREV: Record<string, string> = {
+  street: "ST", avenue: "AVE", boulevard: "BLVD", drive: "DR", court: "CT",
+  place: "PL", lane: "LN", terrace: "TER", road: "RD", way: "WAY",
+  circle: "CIR", highway: "HWY", plaza: "PLZ", square: "SQ", alley: "ALY",
+};
+
+function easStreetName(words: string[]): string {
+  const name = words.join(" ");
+  return name.replace(/^(\d{1})(ST|ND|RD|TH)$/, "0$1$2");
+}
+
+const STREET_TYPE_ABBREVS = new Set(Object.values(STREET_TYPE_ABBREV));
+
+function partsFromTokens(numberRaw: string, streetWords: string[]): AddressParts | undefined {
+  const addressNumber = numberRaw.trim().toUpperCase();
+  if (!addressNumber || streetWords.length < 2) return undefined;
+  const typeWord = streetWords[streetWords.length - 1]!;
+  const streetType = STREET_TYPE_ABBREV[typeWord.toLowerCase()]
+    ?? (STREET_TYPE_ABBREVS.has(typeWord) ? typeWord : undefined);
+  if (!streetType) return undefined;
+  const streetName = easStreetName(streetWords.slice(0, -1));
+  if (!streetName) return undefined;
+  return { addressNumber, streetName, streetType };
+}
+
+function extractAddressParts(
+  uspsFirstLine: string | undefined,
+  components: { componentType?: string; componentName?: { text?: string } }[] | undefined,
+): AddressParts | undefined {
+  const number = components?.find((c) => c.componentType === "street_number")?.componentName?.text;
+  const route = components?.find((c) => c.componentType === "route")?.componentName?.text;
+  if (number && route) {
+    const fromRoute = partsFromTokens(number, route.trim().toUpperCase().split(/\s+/));
+    if (fromRoute) return fromRoute;
+  }
+  if (uspsFirstLine && uspsFirstLine.trim()) {
+    const tokens = uspsFirstLine.trim().toUpperCase().split(/\s+/);
+    if (tokens.length >= 3) return partsFromTokens(tokens[0]!, tokens.slice(1));
+  }
+  return undefined;
+}
 
 export async function validateAddress(input: ValidateAddressInput): Promise<ValidateAddressResult> {
   const key = getGoogleServerKey();
@@ -68,11 +117,15 @@ export async function validateAddress(input: ValidateAddressInput): Promise<Vali
           hasReplacedComponents?: boolean;
           hasInferredComponents?: boolean;
         };
-        address?: { formattedAddress?: string };
+        address?: {
+          formattedAddress?: string;
+          addressComponents?: { componentType?: string; componentName?: { text?: string } }[];
+        };
         geocode?: {
           location?: { latitude?: number; longitude?: number };
           accuracy?: string;
         };
+        uspsData?: { standardizedAddress?: { firstAddressLine?: string } };
       };
     };
     const r = data.result;
@@ -89,10 +142,15 @@ export async function validateAddress(input: ValidateAddressInput): Promise<Vali
       : v.addressComplete
       ? "VALIDATED"
       : "UNVALIDATABLE";
+    const parts = extractAddressParts(
+      r?.uspsData?.standardizedAddress?.firstAddressLine,
+      r?.address?.addressComponents,
+    );
     const out: ValidateAddressResult = {
       ok: true,
       verdict,
       standardized: { formattedAddress, lat, lng, accuracy: r?.geocode?.accuracy ?? "" },
+      ...(parts ? { parts } : {}),
     };
     if (corrected) (out as { didYouMean?: string }).didYouMean = formattedAddress;
     return out;

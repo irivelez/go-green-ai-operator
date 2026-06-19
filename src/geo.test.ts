@@ -317,6 +317,206 @@ console.log("\n=== Scenario 10: measureFromAddress never throws on network error
   restoreFetch();
 }
 
+console.log("\n=== Scenario 11: validateAddress → surfaces USPS-normalized structured parts (parcel join input) ===");
+{
+  // The DataSF parcel join needs number / street-name-without-type / USPS street-type.
+  // Google's uspsData.standardizedAddress.firstAddressLine is already CASS-normalized
+  // ("1916 OCTAVIA ST") — the authoritative source. validateAddress MUST surface these
+  // so the lead can persist them and measure_property never depends on the LLM re-parsing.
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: {
+              formattedAddress: "1916 Octavia St, San Francisco, CA 94109-3357, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "1916" } },
+                { componentType: "route", componentName: { text: "Octavia Street" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.7904, longitude: -122.4271 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1916 OCTAVIA ST" } },
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await validateAddress({
+    addressLines: ["1916 octavia st"], locality: "san francisco", adminArea: "CA", postalCode: "94109",
+  });
+  ok("ok:true", res.ok);
+  if (res.ok) {
+    ok("verdict VALIDATED", res.verdict === "VALIDATED", res.verdict);
+    ok("parts.addressNumber '1916'", res.parts?.addressNumber === "1916", res.parts?.addressNumber);
+    ok("parts.streetName 'OCTAVIA' (type stripped, uppercased)", res.parts?.streetName === "OCTAVIA", res.parts?.streetName);
+    ok("parts.streetType 'ST' (USPS abbrev)", res.parts?.streetType === "ST", res.parts?.streetType);
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 12: validateAddress → directional 'South Van Ness Ave' keeps full word in street_name ===");
+{
+  // Verified against live EAS (ramy-di5m): directionals are stored SPELLED OUT inside
+  // street_name ('SOUTH VAN NESS') with NO predirection column — 'S VAN NESS' returns 0 rows.
+  // Google's route component carries the full word ('South Van Ness Avenue'); uspsData
+  // abbreviates ('S VAN NESS') and would MISS. So route is the primary source.
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: {
+              formattedAddress: "100 S Van Ness Ave, San Francisco, CA 94103, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "100" } },
+                { componentType: "route", componentName: { text: "South Van Ness Avenue" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.7726, longitude: -122.4188 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "100 S VAN NESS AVE" } },
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await validateAddress({
+    addressLines: ["100 s van ness ave"], locality: "san francisco", adminArea: "CA", postalCode: "94103",
+  });
+  ok("ok:true", res.ok);
+  if (res.ok) {
+    ok("streetName 'SOUTH VAN NESS' (full directional kept, matches EAS)", res.parts?.streetName === "SOUTH VAN NESS", res.parts?.streetName);
+    ok("streetType 'AVE'", res.parts?.streetType === "AVE", res.parts?.streetType);
+    ok("addressNumber '100'", res.parts?.addressNumber === "100", res.parts?.addressNumber);
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 12b: validateAddress → numbered street '3rd Street' zero-pads to EAS form '03RD' ===");
+{
+  // Verified live: EAS zero-pads numbered streets to 2 digits — '03RD','01ST','09TH'
+  // exist, '11TH'+ unchanged. Google route gives '3rd Street' → naive '3RD' would MISS.
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: {
+              formattedAddress: "1000 3rd St, San Francisco, CA 94158, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "1000" } },
+                { componentType: "route", componentName: { text: "3rd Street" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.7706, longitude: -122.3899 }, accuracy: "ROOFTOP" },
+            uspsData: { standardizedAddress: { firstAddressLine: "1000 3RD ST" } },
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await validateAddress({
+    addressLines: ["1000 3rd st"], locality: "san francisco", adminArea: "CA", postalCode: "94158",
+  });
+  ok("ok:true", res.ok);
+  if (res.ok) {
+    ok("streetName '03RD' (zero-padded to EAS convention)", res.parts?.streetName === "03RD", res.parts?.streetName);
+    ok("streetType 'ST'", res.parts?.streetType === "ST", res.parts?.streetType);
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 12c: validateAddress → unrecognized street type → no parts (degrade to draw, never guess) ===");
+{
+  // Oracle guard: if the last route token isn't a known USPS-style type, do NOT persist
+  // a garbage join key — return no parts so measure falls through to heuristic/draw.
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: {
+              formattedAddress: "1 Pier 39, San Francisco, CA 94133, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "1" } },
+                { componentType: "route", componentName: { text: "Embarcadero" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.8087, longitude: -122.4098 }, accuracy: "ROOFTOP" },
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await validateAddress({
+    addressLines: ["1 embarcadero"], locality: "san francisco", adminArea: "CA", postalCode: "94133",
+  });
+  ok("ok:true", res.ok);
+  if (res.ok) {
+    ok("no parts when type unrecognized (single-token route)", res.parts === undefined, JSON.stringify(res.parts));
+  }
+  restoreFetch();
+}
+
+console.log("\n=== Scenario 13: validateAddress → no uspsData → addressComponents fallback (route type-mapped) ===");
+{
+  // When uspsData is absent (e.g. non-deliverable address), fall back to
+  // addressComponents: street_number + route ("Octavia Street") → map Street→ST.
+  process.env.GOOGLE_MAPS_API_KEY = "test-key-123";
+  mockFetch((url) => {
+    if (url.includes("addressvalidation.googleapis.com")) {
+      return {
+        status: 200,
+        body: {
+          result: {
+            verdict: { addressComplete: true },
+            address: {
+              formattedAddress: "1916 Octavia St, San Francisco, CA 94109, USA",
+              addressComponents: [
+                { componentType: "street_number", componentName: { text: "1916" } },
+                { componentType: "route", componentName: { text: "Octavia Street" } },
+              ],
+            },
+            geocode: { location: { latitude: 37.7904, longitude: -122.4271 }, accuracy: "ROOFTOP" },
+          },
+        },
+      };
+    }
+    return { status: 404, body: { error: "unexpected url" } };
+  });
+
+  const res = await validateAddress({
+    addressLines: ["1916 octavia st"], locality: "san francisco", adminArea: "CA", postalCode: "94109",
+  });
+  ok("ok:true", res.ok);
+  if (res.ok) {
+    ok("fallback addressNumber '1916'", res.parts?.addressNumber === "1916", res.parts?.addressNumber);
+    ok("fallback streetName 'OCTAVIA'", res.parts?.streetName === "OCTAVIA", res.parts?.streetName);
+    ok("fallback streetType 'ST' (Street→ST mapped)", res.parts?.streetType === "ST", res.parts?.streetType);
+  }
+  restoreFetch();
+}
+
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail === 0 ? 0 : 1);
 }
