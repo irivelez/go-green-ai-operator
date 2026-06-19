@@ -37,8 +37,12 @@ export async function POST(req: NextRequest) {
   const { leadId, language, path } = parsed.data;
   const ctx: ToolContext = { leadId, language };
   const result = runConfirmArea(ctx, { path });
+  // lead_missing means the measure step's lead isn't in this store (cross-route
+  // split) — surface 409 so the client re-routes through the agent rather than
+  // letting the customer pay against a fabricated flat-slope price.
+  const status = result.status === "lead_missing" ? 409 : 200;
   return new Response(JSON.stringify(result), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   });
 }
