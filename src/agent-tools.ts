@@ -67,10 +67,10 @@ export interface QualifyResult {
   escalate: boolean;
 }
 
-export function runQualify(
+export async function runQualify(
   ctx: ToolContext,
   args: { address?: string; frequency?: string; hasPhotos?: boolean },
-): QualifyResult {
+): Promise<QualifyResult> {
   const geo = geoQualify({ address: args.address });
   const score = scoreLead(
     {
@@ -83,8 +83,8 @@ export function runQualify(
   );
   const escalate = !geo.in_area || score.score === "C";
 
-  const existing = getLead(ctx.leadId);
-  upsertLead({
+  const existing = await getLead(ctx.leadId);
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     address: args.address ?? existing?.address,
@@ -119,13 +119,13 @@ export interface RecommendTierResult {
   reason: string;
 }
 
-export function runRecommendTier(
+export async function runRecommendTier(
   ctx: ToolContext,
   args: { tier: Tier; reason: string },
-): RecommendTierResult {
+): Promise<RecommendTierResult> {
   const spec = PRICE_BOOK[args.tier];
-  const existing = getLead(ctx.leadId);
-  upsertLead({
+  const existing = await getLead(ctx.leadId);
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     suggested_package: spec.name,
@@ -151,10 +151,12 @@ export function runRecommendTier(
 // compute_pricing — all numbers from priceCart; unknown id → structured error
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function runComputePricing(
+export async function runComputePricing(
   _ctx: ToolContext,
   args: { tier: Tier; frequency: Frequency; addOnIds: string[] },
-): PricingResult | { error: string } {
+): Promise<PricingResult | { error: string }> {
+  // Marked async for uniform run* handler shape. Pure compute — does not touch
+  // the store, so there is no await inside. Callers always await.
   try {
     return priceCart({ tier: args.tier, frequency: args.frequency, addOnIds: args.addOnIds });
   } catch (e) {
@@ -187,7 +189,7 @@ export interface ProposeCheckoutResult {
   measuredPerVisit?: number;
 }
 
-export function runProposeCheckout(
+export async function runProposeCheckout(
   ctx: ToolContext,
   args: {
     tier: Tier;
@@ -198,11 +200,11 @@ export function runProposeCheckout(
     phone: string;
     address: string;
   },
-): ProposeCheckoutResult {
+): Promise<ProposeCheckoutResult> {
   if (!args.address || !args.address.trim()) {
     return { status: "missing_address", message: "No scheduling without a confirmed address." };
   }
-  const lead = getLead(ctx.leadId);
+  const lead = await getLead(ctx.leadId);
   if (!lead || lead.photos.length === 0) {
     return { status: "missing_photos", message: "Photos are required before autonomous checkout." };
   }
@@ -260,7 +262,8 @@ export function runProposeCheckout(
 // offer_slots
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function runOfferSlots(ctx: ToolContext): SlotOffer[] {
+export async function runOfferSlots(ctx: ToolContext): Promise<SlotOffer[]> {
+  // Async for uniform run* shape; availableSlots does not touch the store.
   return availableSlots(ctx.leadId);
 }
 
@@ -274,11 +277,11 @@ export interface ConfirmBookingResult {
   message?: string;
 }
 
-export function runConfirmBooking(
+export async function runConfirmBooking(
   ctx: ToolContext,
   args: { slotId: string },
-): ConfirmBookingResult {
-  const lead = getLead(ctx.leadId);
+): Promise<ConfirmBookingResult> {
+  const lead = await getLead(ctx.leadId);
   if (!lead) return { status: "lead_missing", message: "Lead not found." };
   if (!PAID_STATES.has(lead.status)) {
     return {
@@ -286,11 +289,11 @@ export function runConfirmBooking(
       message: "Booking is only available after the first payment is confirmed.",
     };
   }
-  const result = bookSlot(ctx.leadId, args.slotId);
+  const result = await bookSlot(ctx.leadId, args.slotId);
   if (!result.ok) {
     return { status: result.reason === "lead_missing" ? "lead_missing" : result.reason };
   }
-  upsertLead({
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: lead.channel,
     status: "Scheduled",
@@ -303,7 +306,11 @@ export function runConfirmBooking(
     },
   });
   // Fire-and-forget crew handoff (spec §A.5). Calendar failure MUST NOT fail the booking;
-  // createCrewEvent never throws, but we wrap in .catch as a belt-and-suspenders guard.
+  // createCrewEvent never throws, BUT the .then body now awaits two store ops (getLead +
+  // upsertLead) that CAN throw on Upstash REST. Surface those via console.warn instead of
+  // silently swallowing — Constitution §8 forbids empty catches (errors are events, never
+  // swallowed). We still don't rethrow: the booking is already persisted, so a calendar
+  // hiccup must not surface as an HTTP error to the customer.
   void createCrewEvent({
     lead_id: ctx.leadId,
     address: lead.address ?? "",
@@ -314,17 +321,21 @@ export function runConfirmBooking(
     end_iso: result.slot.endTime,
     paid: true,
   })
-    .then((r) => {
+    .then(async (r) => {
       if (r.eventId) {
-        const fresh = getLead(ctx.leadId);
-        upsertLead({
+        const fresh = await getLead(ctx.leadId);
+        await upsertLead({
           lead_id: ctx.leadId,
-          channel: lead.channel,
+          channel: fresh?.channel ?? lead.channel,
           work_order: { ...(fresh?.work_order ?? {}), calendar_event_id: r.eventId },
         });
       }
     })
-    .catch(() => {});
+    .catch((e) =>
+      console.warn(
+        `[booking] calendar handoff failed for lead=${ctx.leadId}: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
   return { status: "booked", slot: result.slot };
 }
 
@@ -353,8 +364,8 @@ export async function runValidateAddress(
   // garbage, leaves A's parts on the lead — and a loosely-ordered LLM could measure
   // the WRONG parcel. Wrong-parcel is worse than no-parcel (it silently prices the
   // wrong lot). Clearing forces the heuristic/draw fallback until a clean validate.
-  const clearStaleGeo = () => {
-    const existing = getLead(ctx.leadId);
+  const clearStaleGeo = async () => {
+    const existing = await getLead(ctx.leadId);
     if (
       !existing?.address_number &&
       !existing?.street_name &&
@@ -363,7 +374,7 @@ export async function runValidateAddress(
       existing?.lng === undefined
     )
       return;
-    upsertLead({
+    await upsertLead({
       lead_id: ctx.leadId,
       channel: existing?.channel ?? "form",
       address_number: undefined,
@@ -375,15 +386,15 @@ export async function runValidateAddress(
   };
 
   if (!res.ok) {
-    clearStaleGeo();
+    await clearStaleGeo();
     return { status: "error", reason: res.reason };
   }
   const original = [args.addressLines.join(" "), args.locality, args.adminArea, args.postalCode]
     .filter(Boolean)
     .join(", ");
   if (res.verdict === "VALIDATED" || res.verdict === "CORRECTED") {
-    const existing = getLead(ctx.leadId);
-    upsertLead({
+    const existing = await getLead(ctx.leadId);
+    await upsertLead({
       lead_id: ctx.leadId,
       channel: existing?.channel ?? "form",
       address: res.verdict === "VALIDATED" ? res.standardized.formattedAddress : existing?.address,
@@ -407,7 +418,7 @@ export async function runValidateAddress(
       original,
     };
   }
-  clearStaleGeo();
+  await clearStaleGeo();
   return { status: "unvalidatable" };
 }
 
@@ -436,7 +447,7 @@ export async function runMeasureProperty(
   ctx: ToolContext,
   args: { lat: number; lng: number },
 ): Promise<MeasurePropertyResult> {
-  const leadForParcel = getLead(ctx.leadId);
+  const leadForParcel = await getLead(ctx.leadId);
   const lat = typeof leadForParcel?.lat === "number" ? leadForParcel.lat : args.lat;
   const lng = typeof leadForParcel?.lng === "number" ? leadForParcel.lng : args.lng;
 
@@ -476,9 +487,9 @@ export async function runMeasureProperty(
     }
   }
 
-  const existing = getLead(ctx.leadId);
+  const existing = await getLead(ctx.leadId);
   const prevVision = (existing?.vision_assessment ?? {}) as Record<string, unknown>;
-  upsertLead({
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     estimated_sqft,
@@ -535,12 +546,12 @@ const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
   moderate: "steep",
 };
 
-export function runConfirmArea(
+export async function runConfirmArea(
   ctx: ToolContext,
   args: { path: { lat: number; lng: number }[] },
-): ConfirmAreaResult {
+): Promise<ConfirmAreaResult> {
   const confirmed_sqft = computePolygonSqft(args.path);
-  const existing = getLead(ctx.leadId);
+  const existing = await getLead(ctx.leadId);
 
   if (confirmed_sqft <= 0 || confirmed_sqft > MAX_RESIDENTIAL_SQFT) {
     return {
@@ -580,7 +591,7 @@ export function runConfirmArea(
     slope_source = "photo_raised";
   }
 
-  upsertLead({
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     confirmed_sqft,
@@ -613,11 +624,11 @@ export type ComputeExactPriceResult =
       currency: "USD";
     };
 
-export function runComputeExactPrice(
+export async function runComputeExactPrice(
   ctx: ToolContext,
   args: { tier: Tier; frequency: Frequency },
-): ComputeExactPriceResult {
-  const lead = getLead(ctx.leadId);
+): Promise<ComputeExactPriceResult> {
+  const lead = await getLead(ctx.leadId);
   const sqft = lead?.confirmed_sqft;
   if (!sqft || sqft <= 0) {
     return {
@@ -634,7 +645,7 @@ export function runComputeExactPrice(
   const spec = PRICE_BOOK[args.tier];
   // Persist the priced numbers — propose_checkout / Stripe / dashboard now all
   // read the SAME source of truth (review blocker A).
-  upsertLead({
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: lead?.channel ?? "form",
     per_visit_price: r.perVisit,
@@ -664,12 +675,12 @@ export interface RaiseEscalationResult {
   brief: string;
 }
 
-export function runRaiseEscalation(
+export async function runRaiseEscalation(
   ctx: ToolContext,
   args: { primary: string; flags: string[]; brief: string },
-): RaiseEscalationResult {
-  const existing = getLead(ctx.leadId);
-  upsertLead({
+): Promise<RaiseEscalationResult> {
+  const existing = await getLead(ctx.leadId);
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     status: "Needs Human Review",
@@ -695,7 +706,7 @@ export async function runAnalyzePhotos(
   ctx: ToolContext,
   args: { photoUrls?: string[] },
 ): Promise<VisionAssessment> {
-  const existing = getLead(ctx.leadId);
+  const existing = await getLead(ctx.leadId);
   // Prefer explicit urls; otherwise assess the photos already on the lead (the
   // client seeds them on upload, so the model needn't pass huge data: URLs).
   // Filter through isAllowedPhoto so a prompt-injected http/file URL is neither
@@ -704,7 +715,7 @@ export async function runAnalyzePhotos(
   const raw = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
   const urls = raw.filter(isAllowedPhoto);
   const assessment = await analyzeYardPhotos(urls);
-  upsertLead({
+  await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
     photos: urls,
@@ -816,7 +827,7 @@ export function buildTools(ctx: ToolContext) {
         address: z.string(),
       }),
       execute: async (args): Promise<ProposeCheckoutResult> => {
-        const decision = runProposeCheckout(ctx, args);
+        const decision = await runProposeCheckout(ctx, args);
         if (decision.status !== "ready" || !process.env.STRIPE_SECRET_KEY) return decision;
         try {
           const session = await createSubscriptionCheckout({

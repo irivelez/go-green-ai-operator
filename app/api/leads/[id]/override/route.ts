@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { status: 400 },
     );
   }
-  const result = handleOverride(id, parsed.data);
+  const result = await handleOverride(id, parsed.data);
   if (!result.ok) {
     const status = result.error === "not found" ? 404 : 400;
     return NextResponse.json({ ok: false, error: result.error }, { status });

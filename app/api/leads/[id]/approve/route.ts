@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { status: 400 },
     );
   }
-  const result = handleApprove(id, parsed.data);
+  const result = await handleApprove(id, parsed.data);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ lead: result.lead });
 }

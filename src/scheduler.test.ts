@@ -22,6 +22,7 @@ const ok = (name: string, cond: boolean, detail = "") => {
   cond ? pass++ : fail++;
 };
 
+async function main() {
 console.log("\n=== Scheduler 1: GENERATION (Sun 2026-06-14 → first Thu 2026-06-18) ===");
 {
   resetSlots();
@@ -77,17 +78,17 @@ console.log("\n=== Scheduler 2: BOOK + TAKEN (different lead, same slot) ===");
 {
   resetSlots();
   resetStore([]);
-  upsertLead({ lead_id: "LA", channel: "telegram" });
-  upsertLead({ lead_id: "LB", channel: "telegram" });
+  await upsertLead({ lead_id: "LA", channel: "telegram" });
+  await upsertLead({ lead_id: "LB", channel: "telegram" });
 
-  const r1 = bookSlot("LA", "2026-06-18-T1", FROM);
+  const r1 = await bookSlot("LA", "2026-06-18-T1", FROM);
   ok("LA books 2026-06-18-T1 ok", r1.ok === true);
   ok(
     "returned slot.slotId matches",
     r1.ok === true && r1.slot.slotId === "2026-06-18-T1",
   );
 
-  const r2 = bookSlot("LB", "2026-06-18-T1", FROM);
+  const r2 = await bookSlot("LB", "2026-06-18-T1", FROM);
   ok("LB → taken", r2.ok === false && r2.reason === "taken", JSON.stringify(r2));
 }
 
@@ -95,8 +96,8 @@ console.log("\n=== Scheduler 3: OUT OF WINDOW ===");
 {
   resetSlots();
   resetStore([]);
-  upsertLead({ lead_id: "LC", channel: "telegram" });
-  const r = bookSlot("LC", "2099-01-01-T1", FROM);
+  await upsertLead({ lead_id: "LC", channel: "telegram" });
+  const r = await bookSlot("LC", "2099-01-01-T1", FROM);
   ok(
     "2099 slot → out_of_window",
     r.ok === false && r.reason === "out_of_window",
@@ -108,7 +109,7 @@ console.log("\n=== Scheduler 3b: LEAD MISSING ===");
 {
   resetSlots();
   resetStore([]);
-  const r = bookSlot("nope", "2026-06-18-T1", FROM);
+  const r = await bookSlot("nope", "2026-06-18-T1", FROM);
   ok(
     "unknown lead → lead_missing",
     r.ok === false && r.reason === "lead_missing",
@@ -120,10 +121,10 @@ console.log("\n=== Scheduler 4: IDEMPOTENT (same lead, same slot, twice) ===");
 {
   resetSlots();
   resetStore([]);
-  upsertLead({ lead_id: "LD", channel: "telegram" });
+  await upsertLead({ lead_id: "LD", channel: "telegram" });
 
-  const r1 = bookSlot("LD", "2026-06-18-T2", FROM);
-  const r2 = bookSlot("LD", "2026-06-18-T2", FROM);
+  const r1 = await bookSlot("LD", "2026-06-18-T2", FROM);
+  const r2 = await bookSlot("LD", "2026-06-18-T2", FROM);
   ok("first call ok", r1.ok === true);
   ok("second call ok (idempotent)", r2.ok === true);
   ok(
@@ -145,13 +146,15 @@ console.log("\n=== Scheduler 5: WAITLIST GATE (all slots booked) ===");
 {
   resetSlots();
   resetStore([]);
-  upsertLead({ lead_id: "LE", channel: "telegram" });
+  await upsertLead({ lead_id: "LE", channel: "telegram" });
 
   const slots = generateSlots(FROM);
-  for (const s of slots) bookSlot("LE", s.slotId, FROM);
+  for (const s of slots) await bookSlot("LE", s.slotId, FROM);
   ok("availableSlots empty", availableSlots("LF", FROM).length === 0);
   ok("noSlotsInWindow === true", noSlotsInWindow(FROM) === true);
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
 process.exit(fail === 0 ? 0 : 1);
+}
+void main();

@@ -74,14 +74,14 @@ export async function POST(req: NextRequest) {
   // Two). Drop anything that isn't a base64 image data: URI BEFORE we persist —
   // a remote URL on a lead would later be forwarded to Anthropic as an image
   // source (SSRF / exfil). The funnel client only ever uploads data URIs anyway.
-  const existing = getLead(leadId);
+  const existing = await getLead(leadId);
   const safePhotos = photos ? photos.filter(isAllowedPhoto) : undefined;
   if (photos && safePhotos && safePhotos.length !== photos.length) {
     console.warn(
       `[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`,
     );
   }
-  upsertLead({
+  await upsertLead({
     lead_id: leadId,
     channel: existing?.channel ?? "form",
     language,
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
 
   const result = streamText({
     model: anthropic(model),
-    system: agentSystemPrompt(language, getLead(leadId), intent),
+    system: agentSystemPrompt(language, await getLead(leadId), intent),
     messages: convertToCoreMessages(messages as Message[]),
     tools: buildTools(ctx),
     maxSteps: 8,

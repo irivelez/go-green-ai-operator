@@ -86,13 +86,13 @@ function snapshot(lead: Lead) {
   };
 }
 
-export function handleApprove(id: string, body: OwnerActionBody): HandlerResult {
-  const lead = getLead(id);
+export async function handleApprove(id: string, body: OwnerActionBody): Promise<HandlerResult> {
+  const lead = await getLead(id);
   if (!lead) return { ok: false, error: "not found" };
 
   // 1) Capture the structured event BEFORE the status flip (§A.6 ordering).
   const snap = snapshot(lead);
-  appendEvent(id, {
+  await appendEvent(id, {
     actor: "owner",
     action: "approve",
     reason_code: body.reason_code,
@@ -106,11 +106,11 @@ export function handleApprove(id: string, body: OwnerActionBody): HandlerResult 
 
   if (lead.status === "Ready to Schedule" && lead.address) {
     const slot = nextSlots()[0]!;
-    const booked = tool_book_evaluation({ ...lead, address: lead.address }, slot);
+    const booked = await tool_book_evaluation({ ...lead, address: lead.address }, slot);
     if (booked.ok) {
-      const wo = tool_create_work_order(id);
+      const wo = await tool_create_work_order(id);
       const updated = "lead_id" in wo ? (wo as Lead) : lead;
-      const after = upsertLead({
+      const after = await upsertLead({
         lead_id: id, channel: updated.channel,
         internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — booked.`,
       });
@@ -118,7 +118,7 @@ export function handleApprove(id: string, body: OwnerActionBody): HandlerResult 
     }
   }
 
-  const updated = upsertLead({
+  const updated = await upsertLead({
     lead_id: id, channel: lead.channel,
     status: "Ready to Schedule",
     internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — agent resumes.`,
@@ -126,12 +126,12 @@ export function handleApprove(id: string, body: OwnerActionBody): HandlerResult 
   return { ok: true, lead: updated };
 }
 
-export function handleReject(id: string, body: OwnerActionBody): HandlerResult {
-  const lead = getLead(id);
+export async function handleReject(id: string, body: OwnerActionBody): Promise<HandlerResult> {
+  const lead = await getLead(id);
   if (!lead) return { ok: false, error: "not found" };
 
   const snap = snapshot(lead);
-  appendEvent(id, {
+  await appendEvent(id, {
     actor: "owner",
     action: "reject",
     reason_code: body.reason_code,
@@ -140,7 +140,7 @@ export function handleReject(id: string, body: OwnerActionBody): HandlerResult {
     inputs: snap.inputs,
   });
 
-  const updated = upsertLead({
+  const updated = await upsertLead({
     lead_id: id, channel: lead.channel,
     status: "Not a Fit",
     internal_notes: `${lead.internal_notes ?? ""}\n[human] declined ${new Date().toISOString()}.`,
@@ -148,15 +148,15 @@ export function handleReject(id: string, body: OwnerActionBody): HandlerResult {
   return { ok: true, lead: updated };
 }
 
-export function handleOverride(id: string, body: OverrideBody): OverrideResult {
+export async function handleOverride(id: string, body: OverrideBody): Promise<OverrideResult> {
   if (!body || !OVERRIDE_FIELDS.has(body.field)) {
     return { ok: false, error: `invalid field: ${String(body?.field)}` };
   }
-  const lead = getLead(id);
+  const lead = await getLead(id);
   if (!lead) return { ok: false, error: "not found" };
 
   const snap = snapshot(lead);
-  const event = appendEvent(id, {
+  const event = await appendEvent(id, {
     actor: "owner",
     action: `override_${body.field}`,
     reason_code: body.reason_code,

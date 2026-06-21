@@ -129,12 +129,12 @@ export type BookResult =
   | { ok: true; slot: SlotOffer }
   | { ok: false; reason: "taken" | "out_of_window" | "lead_missing" };
 
-export function bookSlot(
+export async function bookSlot(
   leadId: string,
   slotId: string,
   fromDate: Date = new Date(),
-): BookResult {
-  if (!getLead(leadId)) return { ok: false, reason: "lead_missing" };
+): Promise<BookResult> {
+  if (!(await getLead(leadId))) return { ok: false, reason: "lead_missing" };
 
   const slot = generateSlots(fromDate).find((s) => s.slotId === slotId);
   if (!slot) return { ok: false, reason: "out_of_window" };
@@ -146,13 +146,13 @@ export function bookSlot(
 
   // Idempotent: same (lead, slot) twice → still ok, ledger unchanged.
   if (existing === leadId) {
-    actionSeen(leadId, "book_slot", { slotId }); // record (no-op on repeat)
+    await actionSeen(leadId, "book_slot", { slotId }); // record (no-op on repeat)
     return { ok: true, slot: { ...slot, available: false } };
   }
 
   ledger.bookings[slotId] = leadId;
   saveLedger(ledger);
-  actionSeen(leadId, "book_slot", { slotId });
+  await actionSeen(leadId, "book_slot", { slotId });
   return { ok: true, slot: { ...slot, available: false } };
 }
 

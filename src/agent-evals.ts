@@ -492,7 +492,7 @@ async function runScenario(s: Scenario): Promise<void> {
   resetStore([]);
   resetSlots();
   if (s.seedPhotos) {
-    upsertLead({
+    await upsertLead({
       lead_id: leadId,
       channel: "form",
       language: s.language,
@@ -501,7 +501,7 @@ async function runScenario(s: Scenario): Promise<void> {
     });
   }
   if (s.seedFields) {
-    upsertLead({
+    await upsertLead({
       lead_id: leadId,
       channel: "form",
       language: s.language,
@@ -510,7 +510,7 @@ async function runScenario(s: Scenario): Promise<void> {
   }
 
   const ctx: ToolContext = { leadId, language: s.language };
-  const system = agentSystemPrompt(s.language, getLead(leadId), s.intent);
+  const system = agentSystemPrompt(s.language, await getLead(leadId), s.intent);
 
   const calledTools: string[] = [];
   let finalText = "";

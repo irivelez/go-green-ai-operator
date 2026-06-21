@@ -32,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = handleStripeEvent(event);
+    const result = await handleStripeEvent(event);
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "handler error";

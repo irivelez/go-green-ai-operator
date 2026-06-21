@@ -46,22 +46,22 @@ export function tool_quote_range(c: PricingCase) {
   return quoteRange(c);
 }
 
-export function tool_book_evaluation(lead: Lead, slotISO: string): { ok: boolean; reason?: string; lead?: Lead } {
+export async function tool_book_evaluation(lead: Lead, slotISO: string): Promise<{ ok: boolean; reason?: string; lead?: Lead }> {
   const deny = hardRuleDeny("book_evaluation", { slot: slotISO }, {
     inbound_text: "", address: lead.address,
   } as CaseState);
   if (deny) return { ok: false, reason: deny };
-  if (actionSeen(lead.lead_id, "book", slotISO)) {
+  if (await actionSeen(lead.lead_id, "book", slotISO)) {
     return { ok: false, reason: "idempotent: already booked this slot" };
   }
-  const updated = upsertLead({
+  const updated = await upsertLead({
     lead_id: lead.lead_id, channel: lead.channel, status: "Scheduled", visit_at: slotISO,
   });
   return { ok: true, lead: updated };
 }
 
-export function tool_create_work_order(lead_id: string): Lead | { error: string } {
-  const lead = getLead(lead_id);
+export async function tool_create_work_order(lead_id: string): Promise<Lead | { error: string }> {
+  const lead = await getLead(lead_id);
   if (!lead) return { error: "lead not found" };
   if (!lead.visit_at) return { error: "no booked visit — cannot create work order" };
   return upsertLead({
@@ -74,8 +74,8 @@ export function tool_create_work_order(lead_id: string): Lead | { error: string 
   });
 }
 
-export function tool_raise_escalation(lead_id: string, channel: Lead["channel"], reason: string, brief: string): Lead {
-  const lead = upsertLead({
+export async function tool_raise_escalation(lead_id: string, channel: Lead["channel"], reason: string, brief: string): Promise<Lead> {
+  const lead = await upsertLead({
     lead_id, channel, status: "Needs Human Review",
     escalation_reason: reason, internal_notes: brief,
   });
