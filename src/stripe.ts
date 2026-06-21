@@ -290,7 +290,7 @@ export function constructWebhookEvent(rawBody: string | Buffer, signature: strin
  * Reduce a verified Stripe event into our store. Idempotent per
  * (lead_id, "stripe.checkout.completed", sessionId).
  */
-export function handleStripeEvent(event: Stripe.Event): StripeWebhookResult {
+export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebhookResult> {
   if (event.type !== "checkout.session.completed") {
     return { received: true, handled: false, reason: `ignored event type: ${event.type}` };
   }
@@ -303,17 +303,17 @@ export function handleStripeEvent(event: Stripe.Event): StripeWebhookResult {
 
   // Idempotency on (lead_id, action, sessionId). actionSeen returns true
   // on the SECOND call — so we early-return on duplicates.
-  if (actionSeen(leadId, "stripe.checkout.completed", session.id)) {
+  if (await actionSeen(leadId, "stripe.checkout.completed", session.id)) {
     return { received: true, handled: false, reason: "duplicate event (already processed)" };
   }
 
-  const existing = getLead(leadId);
+  const existing = await getLead(leadId);
   const subscriptionId =
     typeof session.subscription === "string"
       ? session.subscription
       : session.subscription?.id;
 
-  upsertLead({
+  await upsertLead({
     lead_id: leadId,
     channel: existing?.channel ?? "form",
     status: "Ready to Schedule",

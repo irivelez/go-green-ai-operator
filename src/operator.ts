@@ -130,7 +130,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const text = input.text.trim();
   const lang = detectLanguage(text) ?? "en";
 
-  const prev = getLead(input.lead_id);
+  const prev = await getLead(input.lead_id);
   const photos = [...(prev?.photos ?? [])];
   if (input.has_photo) photos.push(`photo-${Date.now()}.jpg`);
 
@@ -140,7 +140,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const hasAddress = !!prev?.address || looksLikeAddress(text);
   const address = looksLikeAddress(text) ? text : prev?.address;
 
-  let lead = upsertLead({
+  let lead = await upsertLead({
     lead_id: input.lead_id,
     channel: input.channel,
     name: input.name ?? prev?.name,
@@ -161,7 +161,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   // 1) Escalation gate (spec §12.2) — runs before any client-facing booking.
   const esc = checkEscalation({ inbound_text: text, property_type: lead.property_type });
   if (esc.escalate) {
-    lead = tool_raise_escalation(
+    lead = await tool_raise_escalation(
       lead.lead_id, lead.channel, esc.reasons.join(", "),
       `Auto-flagged on intake: ${esc.reasons.join("; ")}. Inbound: "${text.slice(0, 240)}"`,
     );
@@ -187,7 +187,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   trace.push(`geo: ${geo.reason}; score=${scored.score} (${scored.reasons.join("; ")})`);
 
   if (scored.score === "C" && geo.in_area === false && (lead.address || zip)) {
-    lead = upsertLead({ lead_id: lead.lead_id, channel: lead.channel, lead_score: "C", status: "Not a Fit", ai_recommendation: geo.reason });
+    lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, lead_score: "C", status: "Not a Fit", ai_recommendation: geo.reason });
     decision.intent = "decline"; decision.stage = lead.status;
     const reply = await composeReply({ kind: "out_of_area", lang, lead, userText: text, decision });
     return { reply, lead, decision };
@@ -201,7 +201,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   decision.missing = missing;
 
   if (missing.length > 0) {
-    lead = upsertLead({
+    lead = await upsertLead({
       lead_id: lead.lead_id, channel: lead.channel, lead_score: scored.score, zone: geo.zone,
       status: lead.address || lead.desired_frequency || lead.photos.length ? "Waiting for Info" : "New Lead",
     });
@@ -226,13 +226,13 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   trace.push(`vision: ${size} yard, cleanup=${vision.cleanup_required}; range=$${range.low}-$${range.high}; package=${pkg}`);
 
   if (!range.covered) {
-    lead = tool_raise_escalation(lead.lead_id, lead.channel, "pricing outside rubric coverage", `Pricing engine returned no covered range for ${size}/${lead.desired_frequency}.`);
+    lead = await tool_raise_escalation(lead.lead_id, lead.channel, "pricing outside rubric coverage", `Pricing engine returned no covered range for ${size}/${lead.desired_frequency}.`);
     decision.escalated = true; decision.escalation_reasons = ["pricing outside rubric coverage"]; decision.stage = lead.status;
     const reply = await composeReply({ kind: "escalated", lang, reasons: decision.escalation_reasons, lead, userText: text, decision });
     return { reply, lead, decision };
   }
 
-  lead = upsertLead({
+  lead = await upsertLead({
     lead_id: lead.lead_id, channel: lead.channel, lead_score: "A", zone: geo.zone,
     vision_assessment: vision as unknown as Record<string, unknown>,
     suggested_package: pkg, price_range: { low: range.low, high: range.high },
@@ -247,9 +247,9 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const wasOffered = prev?.status === "Ready to Schedule" || prev?.status === "AI Qualified";
   if (wasOffered && confirmsBooking(text)) {
     const slot = slots[chosenSlotIndex(text)]!;
-    const booked = tool_book_evaluation({ ...lead, address: lead.address } as never, slot);
+    const booked = await tool_book_evaluation({ ...lead, address: lead.address } as never, slot);
     if (booked.ok) {
-      lead = tool_create_work_order(lead.lead_id) as Lead;
+      lead = await tool_create_work_order(lead.lead_id) as Lead;
       decision.booked_slot = slot; decision.intent = "booked"; decision.stage = lead.status;
       trace.push(`booked ${slot} → work order created`);
       const reply = await composeReply({ kind: "booked", lang, lead, slot, range, pkg, userText: text, decision });
@@ -259,7 +259,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   }
 
   // Otherwise, offer two slots.
-  lead = upsertLead({ lead_id: lead.lead_id, channel: lead.channel, status: "Ready to Schedule" });
+  lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, status: "Ready to Schedule" });
   decision.intent = "offer_slots"; decision.stage = lead.status;
   trace.push(`offered slots → Ready to Schedule`);
   const reply = await composeReply({ kind: "offer_slots", lang, lead, slots, range, pkg, vision, userText: text, decision });

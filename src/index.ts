@@ -19,7 +19,7 @@ bot.on("message", async (m) => {
   const text = m.text ?? m.caption ?? "";
   const photos = m.photo ? [m.photo[m.photo.length - 1]!.file_id] : [];
 
-  upsertLead({ lead_id, channel: "telegram", name: m.from?.first_name, photos });
+  await upsertLead({ lead_id, channel: "telegram", name: m.from?.first_name, photos });
 
   const res = await runLead({ lead_id, channel: "telegram", inbound_text: text, photo_urls: photos });
   const reply = res && "result" in res && typeof res.result === "string"

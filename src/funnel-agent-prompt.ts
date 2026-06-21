@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { FUNNEL_SYSTEM_PROMPT } from "./funnel-prompt";
-import { getLead } from "./store";
+import type { Lead } from "./store";
 import type { VisionAssessment } from "./contract";
 import { decodeIntent } from "./intent";
 
@@ -17,9 +17,12 @@ export const Body = z.object({
   intent: z.string().optional(),
 });
 
+// Pure formatter — async getLead is awaited by the caller and the resolved Lead
+// is passed in. Keeping this sync avoids forcing every test that builds a prompt
+// to become async.
 export function agentSystemPrompt(
   lang: "en" | "es",
-  lead: ReturnType<typeof getLead>,
+  lead: Lead | undefined,
   intent?: string,
 ): string {
   const langName = lang === "es" ? "Spanish" : "English";

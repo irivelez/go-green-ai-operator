@@ -6,6 +6,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const leads = allLeads();
+  const leads = await allLeads();
   return NextResponse.json({ leads, kpis: computeKpis(leads) });
 }
