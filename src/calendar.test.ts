@@ -2,7 +2,8 @@
 // Spec: §A.5 — crew endpoint via Google Calendar event (Composio GOOGLECALENDAR_CREATE_EVENT).
 // Hermetic: no real Composio calls. Run: npx tsx src/calendar.test.ts
 
-import { createCrewEvent, buildCrewEventPayload } from "./calendar";
+import { createCrewEvent, buildCrewEventPayload, exportTodaysVisits } from "./calendar";
+import { resetStore, upsertLead, actionSeen } from "./store";
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
@@ -97,6 +98,73 @@ async function main() {
     delete process.env.GOOGLE_CALENDAR_ID;
     const res = await createCrewEvent(baseInput);
     ok("returns ok:false+unconfigured when both missing", res.ok === false && res.reason === "unconfigured");
+  }
+
+  console.log("\n=== exportTodaysVisits — one-way export, idempotent, gated ===");
+  {
+    // Gate DISABLED (CREW_CALENDAR_ENABLED!=1) → createCrewEvent returns
+    // {disabled}; export treats that as a clean no-op: NOT counted exported, NOT
+    // skipped-to-report, and crucially NOT marked seen — so a future cron retries
+    // once the gate flips (Oracle S1: marking-before-success permanently skipped).
+    delete process.env.CREW_CALENDAR_ENABLED;
+    process.env.COMPOSIO_API_KEY = "stub";
+    process.env.GOOGLE_CALENDAR_ID = "cal_x";
+    resetStore([]);
+    const today = new Date();
+    today.setHours(15, 0, 0, 0);
+    const visitIso = today.toISOString();
+    await upsertLead({
+      lead_id: "GX1",
+      channel: "form",
+      status: "BOOKED",
+      visit_at: visitIso,
+      address: "1 Test St, SF",
+      work_order: { slotId: `${visitIso}-T1`, window: `${visitIso}–${visitIso}` },
+    });
+    // A non-today BOOKED visit must be excluded.
+    await upsertLead({
+      lead_id: "GX2",
+      channel: "form",
+      status: "BOOKED",
+      visit_at: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
+      address: "2 Future St, SF",
+    });
+    const r1 = await exportTodaysVisits();
+    ok("gate-disabled export is a clean no-op (0 exported, 0 skipped)", r1.exported === 0 && r1.skipped === 0, JSON.stringify(r1));
+    // S1: a gated/failed export did NOT mark the visit seen, so a future run
+    // (once the gate flips) still attempts it — it is NOT permanently skipped.
+    const r2 = await exportTodaysVisits();
+    ok("gated visit NOT permanently marked seen (retryable next run)", r2.exported === 0 && r2.skipped === 0, JSON.stringify(r2));
+  }
+
+  console.log("\n=== S4: read-only pre-check skips an already-exported visit (no duplicate event) ===");
+  {
+    // Simulate a visit that was already exported in a prior run by pre-seeding the
+    // gcal_export action ledger. The pre-check (actionAlreadySeen) must skip it
+    // BEFORE calling createCrewEvent — else a re-run would create a DUPLICATE event.
+    process.env.CREW_CALENDAR_ENABLED = "1";
+    process.env.COMPOSIO_API_KEY = "stub";
+    process.env.GOOGLE_CALENDAR_ID = "cal_x";
+    resetStore([]);
+    const today = new Date();
+    today.setHours(15, 0, 0, 0);
+    const visitIso = today.toISOString();
+    const slotId = `${visitIso}-T1`;
+    await upsertLead({
+      lead_id: "GX3",
+      channel: "form",
+      status: "BOOKED",
+      visit_at: visitIso,
+      address: "3 Test St, SF",
+      work_order: { slotId, window: `${visitIso}–${visitIso}` },
+    });
+    // Mark it already-exported (a prior successful run).
+    await actionSeen("GX3", "gcal_export", slotId);
+    const r = await exportTodaysVisits();
+    ok("already-exported visit is skipped before any create (no duplicate)", r.exported === 0 && r.skipped === 1, JSON.stringify(r));
+    delete process.env.CREW_CALENDAR_ENABLED;
+    delete process.env.COMPOSIO_API_KEY;
+    delete process.env.GOOGLE_CALENDAR_ID;
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
