@@ -6,15 +6,8 @@
 // Run: npx tsx src/cards-smoke.test.ts
 
 import * as React from "react";
-import {
-  AddressConfirmCard,
-  SlopePhotoPromptCard,
-  ExactPriceCard,
-} from "../app/agent/components/cards";
-import type {
-  ValidateAddressToolResult,
-  ComputeExactPriceResult,
-} from "./agent-tools";
+import { AddressConfirmCard, SlopePhotoPromptCard, ExactPriceCard } from "../app/agent/components/cards";
+import type { ValidateAddressToolResult, ComputeExactPriceResult } from "./agent-tools";
 
 let pass = 0,
   fail = 0;

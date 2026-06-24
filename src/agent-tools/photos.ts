@@ -7,10 +7,7 @@ import { type VisionAssessment } from "../contract";
 import { type ToolContext } from "./shared";
 
 export const AnalyzePhotosArgsSchema = z.object({
-  photoUrls: z
-    .array(z.string())
-    .optional()
-    .describe("Optional image URLs; omit to use the photos already on the lead"),
+  photoUrls: z.array(z.string()).optional().describe("Optional image URLs; omit to use the photos already on the lead"),
 });
 
 export async function runAnalyzePhotos(
@@ -23,7 +20,7 @@ export async function runAnalyzePhotos(
   // Filter through isAllowedPhoto so a prompt-injected http/file URL is neither
   // sent to the model NOR persisted onto the lead (where a future renderer would
   // fetch it) — closes the sibling exfil vector to the funnel-route photo filter.
-  const raw = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : existing?.photos ?? [];
+  const raw = args.photoUrls && args.photoUrls.length > 0 ? args.photoUrls : (existing?.photos ?? []);
   const urls = raw.filter(isAllowedPhoto);
   const assessment = await analyzeYardPhotos(urls);
   await upsertLead({

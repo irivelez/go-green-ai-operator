@@ -67,8 +67,7 @@ const L = {
     exactTitle: "Your exact price",
     exactCaveat: "Final price confirmed on the first on-site visit.",
     measureFirstTitle: "Let's measure your space first",
-    measureFirstBody:
-      "Confirm the maintained area on the map and we'll show the exact per-visit price.",
+    measureFirstBody: "Confirm the maintained area on the map and we'll show the exact per-visit price.",
     perMonth: "/ month",
     includes: "Includes",
   },
@@ -106,8 +105,7 @@ const L = {
     exactTitle: "Tu precio exacto",
     exactCaveat: "El precio final se confirma en la primera visita en sitio.",
     measureFirstTitle: "Primero midamos tu espacio",
-    measureFirstBody:
-      "Confirma el área de mantenimiento en el mapa y te mostraremos el precio exacto por visita.",
+    measureFirstBody: "Confirma el área de mantenimiento en el mapa y te mostraremos el precio exacto por visita.",
     perMonth: "/ mes",
     includes: "Incluye",
   },
@@ -124,9 +122,7 @@ const fmtSlotTime = (iso: string, lang: Lang) =>
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rise-in rounded-2xl border border-moss-100 bg-white shadow-petal overflow-hidden">
-      {children}
-    </div>
+    <div className="rise-in rounded-2xl border border-moss-100 bg-white shadow-petal overflow-hidden">{children}</div>
   );
 }
 
@@ -151,7 +147,16 @@ export function TraceChip({ lang, lines }: { lang: Lang; lines: string[] }) {
 }
 
 export function QualifyCard({ lang, r }: { lang: Lang; r: QualifyResult }) {
-  return <TraceChip lang={lang} lines={[`${r.inArea ? "✓" : "✕"} ${r.reasons[0] ?? ""}`, ...r.reasons.slice(1), `score ${r.score} · risk ${r.risk}`].filter(Boolean)} />;
+  return (
+    <TraceChip
+      lang={lang}
+      lines={[
+        `${r.inArea ? "✓" : "✕"} ${r.reasons[0] ?? ""}`,
+        ...r.reasons.slice(1),
+        `score ${r.score} · risk ${r.risk}`,
+      ].filter(Boolean)}
+    />
+  );
 }
 
 // ── tier options (recommend_tier) ───────────────────────────────────────────────
@@ -369,12 +374,8 @@ export function AddressConfirmCard({
           </div>
         )}
         <div className="rounded-xl border border-moss-200 bg-paper/60 px-3 py-2.5">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
-            {t.didYouMean}
-          </div>
-          <div className="mt-0.5 font-display text-[15px] leading-snug text-bark-900">
-            {result.didYouMean}
-          </div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">{t.didYouMean}</div>
+          <div className="mt-0.5 font-display text-[15px] leading-snug text-bark-900">{result.didYouMean}</div>
         </div>
         <div className="flex gap-2">
           <button
@@ -403,13 +404,7 @@ export function AddressConfirmCard({
 // Pricing is measured-area × slope multiplier. If the photos didn't show a clear
 // slope signal, we ask for one before locking the exact number. Reuses the
 // existing photo affordance — the user already knows how to upload here.
-export function SlopePhotoPromptCard({
-  lang,
-  onUpload,
-}: {
-  lang: Lang;
-  onUpload?: () => void;
-}) {
+export function SlopePhotoPromptCard({ lang, onUpload }: { lang: Lang; onUpload?: () => void }) {
   const t = L[lang];
   return (
     <Shell>
@@ -439,13 +434,7 @@ export function SlopePhotoPromptCard({
 // ── exact price (compute_exact_price — spec §A.4) ───────────────────────────────
 // ONE exact per-visit number derived from confirmed_sqft × slope_tier. Final
 // confirmation still happens on-site.
-export function ExactPriceCard({
-  result,
-  lang,
-}: {
-  result: ComputeExactPriceResult;
-  lang: Lang;
-}) {
+export function ExactPriceCard({ result, lang }: { result: ComputeExactPriceResult; lang: Lang }) {
   const t = L[lang];
   if (result.status === "missing_measurement") {
     return (
@@ -456,9 +445,7 @@ export function ExactPriceCard({
           </span>
           <div>
             <div className="font-display text-[17px] text-bark-900">{t.measureFirstTitle}</div>
-            <div className="mt-0.5 text-[12.5px] leading-snug text-moss-800/80">
-              {t.measureFirstBody}
-            </div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-moss-800/80">{t.measureFirstBody}</div>
           </div>
         </div>
       </Shell>
@@ -470,14 +457,10 @@ export function ExactPriceCard({
       <div className="flex items-baseline justify-between gap-3 border-b border-moss-100 bg-paper/40 px-4 py-3">
         <div>
           <div className="font-display text-[17px] text-bark-900">{result.tier_name}</div>
-          <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
-            {t.exactTitle}
-          </div>
+          <div className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-moss-700/60">{t.exactTitle}</div>
         </div>
         <div className="text-right">
-          <div className="font-display text-3xl font-medium leading-none text-bark-900">
-            {money(result.perVisit)}
-          </div>
+          <div className="font-display text-3xl font-medium leading-none text-bark-900">{money(result.perVisit)}</div>
           <div className="mt-1 text-[11px] text-moss-700/60">{t.perVisit}</div>
         </div>
       </div>
@@ -485,21 +468,15 @@ export function ExactPriceCard({
         <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
           <span className="text-moss-700/80">{t.monthly}</span>
           <span className="font-medium text-bark-900">
-            {money(result.monthly)}{" "}
-            <span className="text-[10.5px] text-moss-700/60">{t.perMonth}</span>
+            {money(result.monthly)} <span className="text-[10.5px] text-moss-700/60">{t.perMonth}</span>
           </span>
         </div>
         {inclusions.length > 0 && (
           <div className="mt-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">
-              {t.includes}
-            </div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-moss-700/60">{t.includes}</div>
             <ul className="mt-1.5 space-y-1">
               {inclusions.map((inc) => (
-                <li
-                  key={inc}
-                  className="flex gap-1.5 text-[12px] leading-snug text-moss-800/85"
-                >
+                <li key={inc} className="flex gap-1.5 text-[12px] leading-snug text-moss-800/85">
                   <Check className="mt-0.5 h-3 w-3 shrink-0 text-moss-500" strokeWidth={2.5} />
                   <span>{inc}</span>
                 </li>
@@ -515,9 +492,7 @@ export function ExactPriceCard({
           {t.pay}
         </button>
       </div>
-      <div className="border-t border-moss-100 px-4 py-2 text-[10.5px] italic text-moss-700/55">
-        {t.exactCaveat}
-      </div>
+      <div className="border-t border-moss-100 px-4 py-2 text-[10.5px] italic text-moss-700/55">{t.exactCaveat}</div>
     </Shell>
   );
 }

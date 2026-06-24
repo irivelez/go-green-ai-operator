@@ -57,8 +57,7 @@ const COPY = {
     confirmingArea: "Confirming the area",
     exactPricing: "Calculating your exact price",
     areaConfirmedChip: (n: number) => `Area confirmed — ${n.toLocaleString()} sqft`,
-    areaConfirmedMessage: (n: number) =>
-      `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
+    areaConfirmedMessage: (n: number) => `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
     areaPostFailed: "I couldn't save the area — let me try again in a moment.",
     addressYes: "Yes, use that address.",
     addressNo: "Let me re-enter my address.",
@@ -83,8 +82,7 @@ const COPY = {
     confirmingArea: "Confirmando el área",
     exactPricing: "Calculando tu precio exacto",
     areaConfirmedChip: (n: number) => `Área confirmada — ${n.toLocaleString()} pies²`,
-    areaConfirmedMessage: (n: number) =>
-      `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
+    areaConfirmedMessage: (n: number) => `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
     areaPostFailed: "No pude guardar el área — déjame intentarlo de nuevo.",
     addressYes: "Sí, usa esa dirección.",
     addressNo: "Déjame corregir mi dirección.",
@@ -193,29 +191,46 @@ export function GenerativeChat({ language }: { language: Lang }) {
     const urls = await Promise.all(Array.from(files).slice(0, 6).map(read));
     const next = [...photos, ...urls].slice(0, 6);
     setPhotos(next);
-    void append({ role: "user", content: c.photosAdded(next.length) }, { body: { leadId: leadIdRef.current, language, photos: next } });
+    void append(
+      { role: "user", content: c.photosAdded(next.length) },
+      { body: { leadId: leadIdRef.current, language, photos: next } },
+    );
   };
 
   const runningLabel = (name: string): string => {
     switch (name) {
-      case "qualify_lead": return c.checking;
-      case "analyze_photos": return c.analyzing;
-      case "propose_checkout": return c.staging;
-      case "offer_slots": return c.finding;
-      case "confirm_booking": return c.booking;
-      case "raise_escalation": return c.routing;
-      case "validate_address": return c.validatingAddress;
-      case "measure_property": return c.measuring;
-      case "confirm_area": return c.confirmingArea;
-      case "compute_exact_price": return c.exactPricing;
-      default: return c.running;
+      case "qualify_lead":
+        return c.checking;
+      case "analyze_photos":
+        return c.analyzing;
+      case "propose_checkout":
+        return c.staging;
+      case "offer_slots":
+        return c.finding;
+      case "confirm_booking":
+        return c.booking;
+      case "raise_escalation":
+        return c.routing;
+      case "validate_address":
+        return c.validatingAddress;
+      case "measure_property":
+        return c.measuring;
+      case "confirm_area":
+        return c.confirmingArea;
+      case "compute_exact_price":
+        return c.exactPricing;
+      default:
+        return c.running;
     }
   };
 
   const renderTool = (tp: ToolPart, key: string) => {
     if (tp.state !== "result") {
       return (
-        <div key={key} className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80">
+        <div
+          key={key}
+          className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80"
+        >
           <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
           {runningLabel(tp.toolName)}…
         </div>
@@ -389,9 +404,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
                 </div>
               )}
               {tools.length > 0 && (
-                <div className="space-y-2.5 pl-9">
-                  {tools.map((tp, i) => renderTool(tp, `${m.id}-t${i}`))}
-                </div>
+                <div className="space-y-2.5 pl-9">{tools.map((tp, i) => renderTool(tp, `${m.id}-t${i}`))}</div>
               )}
             </div>
           );
@@ -414,7 +427,12 @@ export function GenerativeChat({ language }: { language: Lang }) {
       {photos.length > 0 && (
         <div className="flex gap-2 overflow-x-auto border-t border-moss-100 bg-paper/40 px-4 py-2 sm:px-6">
           {photos.map((p, i) => (
-            <img key={i} src={p} alt={`yard ${i + 1}`} className="h-12 w-12 shrink-0 rounded-lg border border-moss-200 object-cover" />
+            <img
+              key={i}
+              src={p}
+              alt={`yard ${i + 1}`}
+              className="h-12 w-12 shrink-0 rounded-lg border border-moss-200 object-cover"
+            />
           ))}
         </div>
       )}

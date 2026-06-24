@@ -17,13 +17,7 @@
 //   - Webhook is idempotent on (lead_id, "stripe.checkout.completed", sessionId).
 
 import Stripe from "stripe";
-import {
-  PRICE_BOOK,
-  FREQUENCY_MULTIPLIER,
-  addOnById,
-  type Tier,
-  type Frequency,
-} from "./contract";
+import { PRICE_BOOK, FREQUENCY_MULTIPLIER, addOnById, type Tier, type Frequency } from "./contract";
 import { upsertLead, actionSeen, getLead } from "./store";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,18 +29,14 @@ let liveModePrinted = false;
 export function getStripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
-    throw new Error(
-      "STRIPE_SECRET_KEY is not set. This build uses Stripe TEST mode only (sk_test_…).",
-    );
+    throw new Error("STRIPE_SECRET_KEY is not set. This build uses Stripe TEST mode only (sk_test_…).");
   }
   if (key.startsWith("sk_test_")) {
     return new Stripe(key);
   }
   if (key.startsWith("sk_live_")) {
     if (process.env.STRIPE_LIVE_OK !== "1") {
-      throw new Error(
-        "STRIPE_SECRET_KEY is a LIVE key (sk_live_…). Set STRIPE_LIVE_OK=1 to enable live mode.",
-      );
+      throw new Error("STRIPE_SECRET_KEY is a LIVE key (sk_live_…). Set STRIPE_LIVE_OK=1 to enable live mode.");
     }
     if (!liveModePrinted) {
       console.warn("[stripe] LIVE MODE active — real charges enabled");
@@ -54,9 +44,7 @@ export function getStripeClient(): Stripe {
     }
     return new Stripe(key);
   }
-  throw new Error(
-    "STRIPE_SECRET_KEY must start with sk_test_ or sk_live_.",
-  );
+  throw new Error("STRIPE_SECRET_KEY must start with sk_test_ or sk_live_.");
 }
 
 // Cents-precision conversion. Avoid binary-float drift on round dollar values.
@@ -77,13 +65,9 @@ export function recurringUnitAmountCents(input: {
   tier?: Tier;
   frequency: Frequency;
 }): number {
-  const perVisit =
-    input.measuredPerVisit ??
-    (input.tier !== undefined ? PRICE_BOOK[input.tier].perVisit : undefined);
+  const perVisit = input.measuredPerVisit ?? (input.tier !== undefined ? PRICE_BOOK[input.tier].perVisit : undefined);
   if (perVisit === undefined) {
-    throw new Error(
-      "recurringUnitAmountCents: requires measuredPerVisit or tier",
-    );
+    throw new Error("recurringUnitAmountCents: requires measuredPerVisit or tier");
   }
   return toCents(perVisit * FREQUENCY_MULTIPLIER[input.frequency]);
 }
@@ -120,9 +104,7 @@ export interface CreateCheckoutOutput {
   sessionId: string;
 }
 
-export async function createSubscriptionCheckout(
-  input: CreateCheckoutInput,
-): Promise<CreateCheckoutOutput> {
+export async function createSubscriptionCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutOutput> {
   // ── Validation (deterministic gates — BEFORE any Stripe call) ──────────────
   if (!PRICE_BOOK[input.tier]) {
     throw new Error(`Unknown tier: ${input.tier}`);
@@ -270,10 +252,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebh
   }
 
   const existing = await getLead(leadId);
-  const subscriptionId =
-    typeof session.subscription === "string"
-      ? session.subscription
-      : session.subscription?.id;
+  const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
 
   await upsertLead({
     lead_id: leadId,

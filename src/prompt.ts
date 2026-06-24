@@ -124,16 +124,14 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
   en: {
     // Hero
     heroHeadline: "Your garden, cared for — beautifully and reliably.",
-    heroSubheadline:
-      "Tell us about your outdoor space and get a transparent, flat-price maintenance plan in minutes.",
+    heroSubheadline: "Tell us about your outdoor space and get a transparent, flat-price maintenance plan in minutes.",
     heroCtaStart: "Get my maintenance plan",
 
     // Intent step
     intentStepHeader: "What does your outdoor space need?",
     intentStepPrompt:
       "Describe your garden and what you're looking for — size, current condition, and how often you'd like service. Our AI will recommend the right plan.",
-    intentStepPlaceholder:
-      "e.g. Small backyard in SF, mostly overgrown, looking for biweekly maintenance…",
+    intentStepPlaceholder: "e.g. Small backyard in SF, mostly overgrown, looking for biweekly maintenance…",
     intentStepCta: "Continue",
 
     // Photo upload
@@ -152,11 +150,9 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
     tierConfirmCta: "Yes, this looks right — continue",
     tierChangeCta: "Choose a different plan",
     tierEssentialName: "Essential Care",
-    tierEssentialBlurb:
-      "Reliable recurring maintenance to keep your outdoor space clean, controlled, and presentable.",
+    tierEssentialBlurb: "Reliable recurring maintenance to keep your outdoor space clean, controlled, and presentable.",
     tierSignatureName: "Signature Care",
-    tierSignatureBlurb:
-      "More detail, better curb appeal, and proactive recommendations for long-term beauty.",
+    tierSignatureBlurb: "More detail, better curb appeal, and proactive recommendations for long-term beauty.",
     tierEstateName: "Estate Care",
     tierEstateBlurb:
       "Premium, high-touch maintenance with priority scheduling, quarterly inspections, and white-glove care.",
@@ -172,8 +168,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
 
     // Identity / address step
     identityStepHeader: "Almost there — let's confirm your details",
-    identityStepSubheader:
-      "We need your address to schedule your first visit and confirm we serve your area.",
+    identityStepSubheader: "We need your address to schedule your first visit and confirm we serve your area.",
     identityNameLabel: "Full name",
     identityEmailLabel: "Email address",
     identityPhoneLabel: "Phone number",
@@ -198,8 +193,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
 
     // Schedule step
     scheduleStepHeader: "Pick your first visit",
-    scheduleStepSubheader:
-      "Choose a slot that works for you. Your crew will arrive ready with a clear work order.",
+    scheduleStepSubheader: "Choose a slot that works for you. Your crew will arrive ready with a clear work order.",
     scheduleSlotCta: "Book this slot",
     scheduleNoSlotsMessage:
       "No slots available in the next 14 days. We'll add you to the waitlist — no charge until a slot opens.",
@@ -212,8 +206,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
     // Human review handoff
     humanReviewHandoff:
       "This request needs a quick review from our team before we proceed. We'll be in touch within one business day — no charge until everything is confirmed.",
-    humanReviewSubtext:
-      "Thank you for your patience. We want to make sure we give you the right recommendation.",
+    humanReviewSubtext: "Thank you for your patience. We want to make sure we give you the right recommendation.",
 
     // Success confirmation
     successHeader: "You're all set — welcome to Go Green Landscape.",
@@ -247,8 +240,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
     photoUploadHeader: "Muéstrenos su espacio",
     photoUploadAsk:
       "Suba algunas fotos de las áreas de su jardín. Esto nos permite recomendar el nivel adecuado y detectar servicios adicionales que pueda necesitar — sin sorpresas.",
-    photoUploadHint:
-      "Jardín frontal, trasero, áreas laterales — cuanto más veamos, mejor podemos ayudarle.",
+    photoUploadHint: "Jardín frontal, trasero, áreas laterales — cuanto más veamos, mejor podemos ayudarle.",
     photoUploadCta: "Subir fotos",
     photoUploadSkipWarning:
       "Las fotos son necesarias para el pago inmediato. Sin ellas, le conectaremos directamente con nuestro equipo.",
@@ -263,8 +255,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
     tierEssentialBlurb:
       "Mantenimiento recurrente confiable para mantener su espacio exterior limpio, controlado y presentable.",
     tierSignatureName: "Cuidado Signature",
-    tierSignatureBlurb:
-      "Más detalle, mejor apariencia y recomendaciones proactivas para la belleza a largo plazo.",
+    tierSignatureBlurb: "Más detalle, mejor apariencia y recomendaciones proactivas para la belleza a largo plazo.",
     tierEstateName: "Cuidado Estate",
     tierEstateBlurb:
       "Mantenimiento premium de alto nivel con programación prioritaria, inspecciones trimestrales y atención de primera clase.",
@@ -320,8 +311,7 @@ export const MICROCOPY: { en: Record<string, string>; es: Record<string, string>
     // Human review handoff
     humanReviewHandoff:
       "Esta solicitud necesita una revisión rápida de nuestro equipo antes de continuar. Le contactaremos dentro de un día hábil — sin cargo hasta que todo esté confirmado.",
-    humanReviewSubtext:
-      "Gracias por su paciencia. Queremos asegurarnos de darle la recomendación correcta.",
+    humanReviewSubtext: "Gracias por su paciencia. Queremos asegurarnos de darle la recomendación correcta.",
 
     // Success confirmation
     successHeader: "Todo listo — bienvenido a Go Green Landscape.",

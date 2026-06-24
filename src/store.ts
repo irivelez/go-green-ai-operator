@@ -35,9 +35,16 @@ import { Redis } from "@upstash/redis";
 import { SEED_LEADS } from "./seed";
 
 export type LeadStatus =
-  | "New Lead" | "Waiting for Info" | "Info Received" | "AI Qualified"
-  | "Ready to Schedule" | "Scheduled" | "Work Order Created"
-  | "Needs Human Review" | "Not a Fit" | "Lost / No Response";
+  | "New Lead"
+  | "Waiting for Info"
+  | "Info Received"
+  | "AI Qualified"
+  | "Ready to Schedule"
+  | "Scheduled"
+  | "Work Order Created"
+  | "Needs Human Review"
+  | "Not a Fit"
+  | "Lost / No Response";
 
 // Crew/booking handoff payload persisted on Lead.work_order. All keys OPTIONAL —
 // this is the union of every write site (confirm_booking, calendar handoff,
@@ -163,7 +170,9 @@ class MemoryBackend implements Backend {
 // Acceptable single-writer (one `next dev` process); never use on Vercel.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface JsonDB { leads: Record<string, Lead>; }
+interface JsonDB {
+  leads: Record<string, Lead>;
+}
 
 class JsonBackend implements Backend {
   constructor(private path: string) {}
@@ -190,9 +199,7 @@ class JsonBackend implements Backend {
     this.save(db);
   }
   async allLeads(): Promise<Lead[]> {
-    return Object.values(this.load().leads).sort((a, b) =>
-      b.created_at.localeCompare(a.created_at),
-    );
+    return Object.values(this.load().leads).sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 }
 
@@ -298,13 +305,16 @@ export function resetStore(seed: Lead[] = []): void {
 // Public API (7 functions). All async. Consumers MUST await.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function upsertLead(
-  fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }
-): Promise<Lead> {
+export async function upsertLead(fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }): Promise<Lead> {
   const existing = await backend.getLead(fields.lead_id);
   const lead: Lead = {
-    photos: [], status: "New Lead", created_at: new Date().toISOString(), _actions: [], events: [],
-    ...existing, ...fields,
+    photos: [],
+    status: "New Lead",
+    created_at: new Date().toISOString(),
+    _actions: [],
+    events: [],
+    ...existing,
+    ...fields,
   } as Lead;
   await backend.putLead(lead);
   return lead;
@@ -320,10 +330,7 @@ export async function allLeads(): Promise<Lead[]> {
 
 // HITL learning loop (spec §A.6): append a structured event to a lead's timeline.
 // Owner corrections, agent decisions, system notes — durable on the same store as the lead.
-export async function appendEvent(
-  lead_id: string,
-  event: Omit<LeadEvent, "ts"> & { ts?: string }
-): Promise<LeadEvent> {
+export async function appendEvent(lead_id: string, event: Omit<LeadEvent, "ts"> & { ts?: string }): Promise<LeadEvent> {
   const stored: LeadEvent = { ...event, ts: event.ts ?? new Date().toISOString() };
   const lead = await backend.getLead(lead_id);
   if (!lead) return stored; // no-op when lead absent — mirror actionSeen's defensive shape
@@ -356,7 +363,10 @@ export async function listEvents(lead_id: string): Promise<LeadEvent[]> {
 // Lua script or per-field HSET model so writes diff-merge atomically. Tracked
 // in AGENTS.md known-gaps §4.
 export async function actionSeen(lead_id: string, action: string, payload: unknown): Promise<boolean> {
-  const hash = createHash("sha256").update(action + JSON.stringify(payload)).digest("hex").slice(0, 16);
+  const hash = createHash("sha256")
+    .update(action + JSON.stringify(payload))
+    .digest("hex")
+    .slice(0, 16);
   const lead = await backend.getLead(lead_id);
   if (!lead) return false;
   if (lead._actions.includes(hash)) return true;

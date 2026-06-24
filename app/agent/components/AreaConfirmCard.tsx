@@ -17,19 +17,9 @@
 // and the same Confirm button — so the funnel never breaks headlessly.
 
 import { useCallback, useMemo, useState } from "react";
-import {
-  APIProvider,
-  Map,
-  Polygon,
-  useMapsLibrary,
-  type MapMouseEvent,
-} from "@vis.gl/react-google-maps";
+import { APIProvider, Map, Polygon, useMapsLibrary, type MapMouseEvent } from "@vis.gl/react-google-maps";
 import { Check, MapPin, RotateCcw } from "lucide-react";
-import {
-  pickInitialPath,
-  M2_TO_SQFT,
-  type LatLng,
-} from "@/src/area-card-logic";
+import { pickInitialPath, M2_TO_SQFT, type LatLng } from "@/src/area-card-logic";
 import type { Lang } from "./cards";
 
 const L = {
@@ -82,12 +72,7 @@ export function AreaConfirmCard(props: AreaConfirmCardProps) {
     return <StaticFallback {...props} />;
   }
   return (
-    <APIProvider
-      apiKey={apiKey}
-      onError={(err) =>
-        console.error("[AreaConfirmCard] Google Maps failed to load:", err)
-      }
-    >
+    <APIProvider apiKey={apiKey} onError={(err) => console.error("[AreaConfirmCard] Google Maps failed to load:", err)}>
       <MapSurface {...props} />
     </APIProvider>
   );
@@ -98,10 +83,7 @@ function MapSurface({ result, center, lang, onConfirm }: AreaConfirmCardProps) {
   const t = L[lang];
   const geometry = useMapsLibrary("geometry");
 
-  const initialPath = useMemo(
-    () => pickInitialPath(result.parcel_ring),
-    [result.parcel_ring],
-  );
+  const initialPath = useMemo(() => pickInitialPath(result.parcel_ring), [result.parcel_ring]);
 
   const [path, setPath] = useState<LatLng[]>(initialPath);
   const isHighConfidence = initialPath.length > 0;
@@ -256,9 +238,7 @@ function StaticFallback({ result, center, lang, onConfirm }: AreaConfirmCardProp
           {t.fallback}
         </div>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] uppercase tracking-[0.14em] text-moss-700/70">
-            {t.fallbackInput}
-          </span>
+          <span className="text-[10px] uppercase tracking-[0.14em] text-moss-700/70">{t.fallbackInput}</span>
           <input
             type="number"
             min={100}

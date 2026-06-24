@@ -33,8 +33,7 @@ export const PRICE_BOOK: Record<Tier, TierSpec> = {
     id: "essential",
     name: "Essential Care",
     perVisit: 199,
-    blurb:
-      "Reliable recurring maintenance to keep the outdoor space clean, controlled, and presentable.",
+    blurb: "Reliable recurring maintenance to keep the outdoor space clean, controlled, and presentable.",
     includes: [
       "Basic mowing (if applicable)",
       "Basic edging",
@@ -63,8 +62,7 @@ export const PRICE_BOOK: Record<Tier, TierSpec> = {
     id: "signature",
     name: "Signature Care",
     perVisit: 299,
-    blurb:
-      "More detail, better curb appeal, and proactive recommendations for long-term beauty.",
+    blurb: "More detail, better curb appeal, and proactive recommendations for long-term beauty.",
     includes: [
       "Everything in Essential Care",
       "More detailed bed cleanup",
@@ -93,8 +91,7 @@ export const PRICE_BOOK: Record<Tier, TierSpec> = {
     id: "estate",
     name: "Estate Care",
     perVisit: 399,
-    blurb:
-      "Premium, high-touch, proactive maintenance with priority scheduling and reporting.",
+    blurb: "Premium, high-touch, proactive maintenance with priority scheduling and reporting.",
     includes: [
       "Everything in Signature Care",
       "Priority scheduling when available",
@@ -271,14 +268,7 @@ export const ADD_ON_CATALOG: AddOn[] = [
   fixedAddOn("timer-programming", "Timer programming", "irrigation", 95, "per service"),
   fixedAddOn("leak-detection", "Leak detection", "irrigation", 150, "per service"),
   fixedAddOn("seasonal-irrigation-adjustment", "Seasonal irrigation adjustment", "irrigation", 95, "per service"),
-  openEndedAddOn(
-    "irrigation-repair",
-    "Irrigation repair",
-    "irrigation",
-    150,
-    "+ parts",
-    "labor + variable parts cost",
-  ),
+  openEndedAddOn("irrigation-repair", "Irrigation repair", "irrigation", 150, "+ parts", "labor + variable parts cost"),
   fixedAddOn("smart-controller-setup", "Smart controller setup", "irrigation", 250, "per service"),
   fixedAddOn("water-efficiency-review", "Water efficiency review", "irrigation", 150, "per service"),
 
@@ -335,7 +325,13 @@ export const ADD_ON_CATALOG: AddOn[] = [
   fixedAddOn("seasonal-landscape-planning", "Seasonal landscape planning", "premium_client", 250, "per service"),
   fixedAddOn("property-manager-report", "Property manager report", "premium_client", 125, "per report"),
   fixedAddOn("hoa-report", "HOA report", "premium_client", 125, "per report"),
-  fixedAddOn("annual-landscape-improvement-plan", "Annual landscape improvement plan", "premium_client", 450, "per service"),
+  fixedAddOn(
+    "annual-landscape-improvement-plan",
+    "Annual landscape improvement plan",
+    "premium_client",
+    450,
+    "per service",
+  ),
 ];
 
 export function addOnById(id: string): AddOn | undefined {

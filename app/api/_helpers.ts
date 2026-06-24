@@ -22,9 +22,7 @@ interface WithBodyOptions<T extends z.ZodTypeAny> {
   coalesceNull?: boolean;
 }
 
-type WithBodyResult<T extends z.ZodTypeAny> =
-  | { ok: true; data: z.infer<T> }
-  | { ok: false; response: NextResponse };
+type WithBodyResult<T extends z.ZodTypeAny> = { ok: true; data: z.infer<T> } | { ok: false; response: NextResponse };
 
 // Parse + validate a request body, returning either the typed data or a ready
 // 400 NextResponse. Callers branch on `ok`.
@@ -48,13 +46,8 @@ export async function withBody<T extends z.ZodTypeAny>(
 // { lead } success — differing only in the handler. Factor that shape so each
 // route is a one-liner; the handler (handleApprove / handleReject) is the only
 // thing that varies.
-export function ownerActionRoute(
-  handler: (id: string, body: OwnerActionBody) => Promise<HandlerResult>,
-) {
-  return async function POST(
-    req: Request,
-    { params }: { params: Promise<{ id: string }> },
-  ) {
+export function ownerActionRoute(handler: (id: string, body: OwnerActionBody) => Promise<HandlerResult>) {
+  return async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const body = await withBody(req, {
       schema: OwnerActionSchema,

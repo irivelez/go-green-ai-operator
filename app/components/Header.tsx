@@ -17,9 +17,7 @@ export function Header({ live, error }: { live: boolean; error?: string | null }
                   Go Green Landscape
                 </span>
                 <span className="h-1 w-1 rounded-full bg-moss-300" />
-                <span className="text-[11px] uppercase tracking-[0.18em] text-moss-500">
-                  Deltanova build
-                </span>
+                <span className="text-[11px] uppercase tracking-[0.18em] text-moss-500">Deltanova build</span>
               </div>
               <h1 className="font-display text-3xl sm:text-4xl font-medium text-bark-900 leading-tight">
                 Go Green <span className="italic text-moss-700">AI Operator</span>
@@ -47,27 +45,14 @@ export function Header({ live, error }: { live: boolean; error?: string | null }
   );
 }
 
-function StatusBadge({
-  tone,
-  label,
-  detail,
-}: {
-  tone: "live" | "idle" | "warn";
-  label: string;
-  detail?: string;
-}) {
+function StatusBadge({ tone, label, detail }: { tone: "live" | "idle" | "warn"; label: string; detail?: string }) {
   const ring =
     tone === "live"
       ? "border-moss-200 bg-white/80 text-moss-800"
       : tone === "warn"
         ? "border-amber-200 bg-amber-50/90 text-amber-900"
         : "border-stone-200 bg-white/80 text-stone-700";
-  const dot =
-    tone === "live"
-      ? "bg-moss-500 dot-live"
-      : tone === "warn"
-        ? "bg-amber-500"
-        : "bg-stone-400";
+  const dot = tone === "live" ? "bg-moss-500 dot-live" : tone === "warn" ? "bg-amber-500" : "bg-stone-400";
   return (
     <div
       className={`inline-flex items-center gap-2.5 rounded-full border px-3.5 py-2 shadow-petal backdrop-blur-sm ${ring}`}

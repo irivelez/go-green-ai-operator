@@ -20,10 +20,7 @@ export const QualifyArgsSchema = z.object({
   hasPhotos: z.boolean().optional().describe("Whether the customer has provided yard photos"),
 });
 
-export async function runQualify(
-  ctx: ToolContext,
-  args: z.infer<typeof QualifyArgsSchema>,
-): Promise<QualifyResult> {
+export async function runQualify(ctx: ToolContext, args: z.infer<typeof QualifyArgsSchema>): Promise<QualifyResult> {
   const geo = geoQualify({ address: args.address });
   const score = scoreLead(
     {
@@ -45,7 +42,7 @@ export async function runQualify(
     desired_frequency: args.frequency ?? existing?.desired_frequency,
     lead_score: score.score,
     risk_level: score.risk,
-    status: escalate ? existing?.status ?? "New Lead" : "AI Qualified",
+    status: escalate ? (existing?.status ?? "New Lead") : "AI Qualified",
   });
 
   return {

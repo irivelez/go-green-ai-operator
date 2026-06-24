@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
   const json = await req.json().catch(() => null);
   const parsed = Body.safeParse(json);
   if (!parsed.success) {
-    return new Response(
-      JSON.stringify({ error: "invalid body", issues: parsed.error.issues }),
-      { status: 400, headers: { "content-type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: "invalid body", issues: parsed.error.issues }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
   }
   const { leadId, language, path } = parsed.data;
   const ctx: ToolContext = { leadId, language };

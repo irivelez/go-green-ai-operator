@@ -17,11 +17,7 @@ export const TierEnum = z.enum(["essential", "signature", "estate"]);
 export const FrequencyEnum = z.enum(["weekly", "biweekly", "monthly"]);
 
 // Lead is "paid" once the Stripe webhook (stripe.ts) advances it past qualification.
-export const PAID_STATES = new Set<LeadStatus>([
-  "Ready to Schedule",
-  "Scheduled",
-  "Work Order Created",
-]);
+export const PAID_STATES = new Set<LeadStatus>(["Ready to Schedule", "Scheduled", "Work Order Created"]);
 
 // How many PRICE_BOOK inclusions to surface (recommend card + work order).
 export const MAX_TIER_INCLUDES = 6;

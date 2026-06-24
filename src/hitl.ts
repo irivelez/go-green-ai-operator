@@ -115,7 +115,8 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
       const workOrder = await tool_create_work_order(id);
       const updated = "lead_id" in workOrder ? (workOrder as Lead) : lead;
       const after = await upsertLead({
-        lead_id: id, channel: updated.channel,
+        lead_id: id,
+        channel: updated.channel,
         internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — booked.`,
       });
       return { ok: true, lead: after };
@@ -123,7 +124,8 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
   }
 
   const updated = await upsertLead({
-    lead_id: id, channel: lead.channel,
+    lead_id: id,
+    channel: lead.channel,
     status: "Ready to Schedule",
     internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — agent resumes.`,
   });
@@ -145,7 +147,8 @@ export async function handleReject(id: string, body: OwnerActionBody): Promise<H
   });
 
   const updated = await upsertLead({
-    lead_id: id, channel: lead.channel,
+    lead_id: id,
+    channel: lead.channel,
     status: "Not a Fit",
     internal_notes: `${lead.internal_notes ?? ""}\n[human] declined ${new Date().toISOString()}.`,
   });

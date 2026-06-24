@@ -20,11 +20,7 @@ export const Body = z.object({
 // Pure formatter — async getLead is awaited by the caller and the resolved Lead
 // is passed in. Keeping this sync avoids forcing every test that builds a prompt
 // to become async.
-export function agentSystemPrompt(
-  lang: "en" | "es",
-  lead: Lead | undefined,
-  intent?: string,
-): string {
+export function agentSystemPrompt(lang: "en" | "es", lead: Lead | undefined, intent?: string): string {
   const langName = lang === "es" ? "Spanish" : "English";
   const ctxLines: string[] = [];
 

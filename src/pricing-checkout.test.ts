@@ -14,7 +14,8 @@
 import { recurringUnitAmountCents } from "./stripe";
 import { PRICE_BOOK, FREQUENCY_MULTIPLIER } from "./contract";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
@@ -52,25 +53,23 @@ console.log("\n=== Scenario 4: all 3 tiers × all 3 frequencies (legacy path sta
 {
   for (const tier of ["essential", "signature", "estate"] as const) {
     for (const frequency of ["weekly", "biweekly", "monthly"] as const) {
-      const expected = Math.round(
-        PRICE_BOOK[tier].perVisit * FREQUENCY_MULTIPLIER[frequency] * 100,
-      );
+      const expected = Math.round(PRICE_BOOK[tier].perVisit * FREQUENCY_MULTIPLIER[frequency] * 100);
       const actual = recurringUnitAmountCents({ tier, frequency });
-      ok(
-        `${tier} × ${frequency} → ${expected} cents`,
-        actual === expected,
-        `got ${actual}`,
-      );
+      ok(`${tier} × ${frequency} → ${expected} cents`, actual === expected, `got ${actual}`);
     }
   }
 }
 
 console.log("\n=== Scenario 5: missing both measuredPerVisit AND tier → throws ===");
 {
-  let threw = false; let msg = "";
+  let threw = false;
+  let msg = "";
   try {
     recurringUnitAmountCents({ frequency: "biweekly" } as never);
-  } catch (e) { threw = true; msg = (e as Error).message; }
+  } catch (e) {
+    threw = true;
+    msg = (e as Error).message;
+  }
   ok("throws when neither input present", threw, msg);
 }
 

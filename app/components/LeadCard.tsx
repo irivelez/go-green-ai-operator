@@ -63,16 +63,12 @@ export function LeadCard({
           <div className="mt-3 flex items-baseline gap-2">
             <span className="font-display text-lg font-medium text-moss-900">{range}</span>
             {lead.suggested_package && (
-              <span className="text-[11px] text-moss-700/70 truncate">
-                · {lead.suggested_package}
-              </span>
+              <span className="text-[11px] text-moss-700/70 truncate">· {lead.suggested_package}</span>
             )}
           </div>
         )}
         {!range && lead.suggested_package && (
-          <div className="mt-2 text-xs text-moss-700/80 truncate">
-            {lead.suggested_package}
-          </div>
+          <div className="mt-2 text-xs text-moss-700/80 truncate">{lead.suggested_package}</div>
         )}
 
         {/* Meta rows */}

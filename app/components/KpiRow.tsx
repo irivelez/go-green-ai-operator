@@ -25,15 +25,9 @@ interface Tile {
 export function KpiRow({ kpis }: { kpis: Kpis | null }) {
   if (!kpis) {
     return (
-      <section
-        className="grid gap-3 sm:gap-4"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-      >
+      <section className="grid gap-3 sm:gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
         {Array.from({ length: 8 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-[112px] rounded-2xl border border-moss-100 bg-white/60 shimmer"
-          />
+          <div key={i} className="h-[112px] rounded-2xl border border-moss-100 bg-white/60 shimmer" />
         ))}
       </section>
     );
@@ -99,10 +93,7 @@ export function KpiRow({ kpis }: { kpis: Kpis | null }) {
   ];
 
   return (
-    <section
-      className="grid gap-3 sm:gap-4"
-      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-    >
+    <section className="grid gap-3 sm:gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
       {tiles.map((t, i) => (
         <KpiTile key={t.label} tile={t} index={i} />
       ))}
@@ -121,8 +112,7 @@ function KpiTile({ tile, index }: { tile: Tile; index: number }) {
           ? "bg-moss-700 text-moss-50 border-moss-800"
           : "bg-moss-50 text-moss-600 border-moss-100";
 
-  const valueColor =
-    tone === "warn" ? "text-amber-900" : tone === "highlight" ? "text-moss-900" : "text-bark-900";
+  const valueColor = tone === "warn" ? "text-amber-900" : tone === "highlight" ? "text-moss-900" : "text-bark-900";
 
   return (
     <div
@@ -137,13 +127,9 @@ function KpiTile({ tile, index }: { tile: Tile; index: number }) {
           <div className={`font-display text-3xl sm:text-[2rem] leading-none font-medium ${valueColor}`}>
             {tile.value}
           </div>
-          {tile.hint && (
-            <div className="text-[11px] text-moss-700/55 mt-1.5">{tile.hint}</div>
-          )}
+          {tile.hint && <div className="text-[11px] text-moss-700/55 mt-1.5">{tile.hint}</div>}
         </div>
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${iconWrap}`}
-        >
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${iconWrap}`}>
           <tile.Icon className="h-4 w-4" strokeWidth={1.8} />
         </div>
       </div>

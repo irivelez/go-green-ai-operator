@@ -7,7 +7,7 @@
 //   stripe listen --forward-to localhost:3000/api/stripe/webhook
 //   → exposes STRIPE_WEBHOOK_SECRET (whsec_…); add it to .env.local.
 
-import type { NextRequest} from "next/server";
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { constructWebhookEvent, handleStripeEvent } from "@/src/stripe";
 

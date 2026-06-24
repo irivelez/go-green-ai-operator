@@ -42,9 +42,21 @@ export type ValidateAddressResult =
   | { ok: false; reason: string };
 
 const STREET_TYPE_ABBREV: Record<string, string> = {
-  street: "ST", avenue: "AVE", boulevard: "BLVD", drive: "DR", court: "CT",
-  place: "PL", lane: "LN", terrace: "TER", road: "RD", way: "WAY",
-  circle: "CIR", highway: "HWY", plaza: "PLZ", square: "SQ", alley: "ALY",
+  street: "ST",
+  avenue: "AVE",
+  boulevard: "BLVD",
+  drive: "DR",
+  court: "CT",
+  place: "PL",
+  lane: "LN",
+  terrace: "TER",
+  road: "RD",
+  way: "WAY",
+  circle: "CIR",
+  highway: "HWY",
+  plaza: "PLZ",
+  square: "SQ",
+  alley: "ALY",
 };
 
 function easStreetName(words: string[]): string {
@@ -58,8 +70,8 @@ function partsFromTokens(numberRaw: string, streetWords: string[]): AddressParts
   const addressNumber = numberRaw.trim().toUpperCase();
   if (!addressNumber || streetWords.length < 2) return undefined;
   const typeWord = streetWords[streetWords.length - 1]!;
-  const streetType = STREET_TYPE_ABBREV[typeWord.toLowerCase()]
-    ?? (STREET_TYPE_ABBREVS.has(typeWord) ? typeWord : undefined);
+  const streetType =
+    STREET_TYPE_ABBREV[typeWord.toLowerCase()] ?? (STREET_TYPE_ABBREVS.has(typeWord) ? typeWord : undefined);
   if (!streetType) return undefined;
   const streetName = easStreetName(streetWords.slice(0, -1));
   if (!streetName) return undefined;
@@ -140,8 +152,8 @@ export async function validateAddress(input: ValidateAddressInput): Promise<Vali
     const verdict: "VALIDATED" | "CORRECTED" | "UNVALIDATABLE" = corrected
       ? "CORRECTED"
       : v.addressComplete
-      ? "VALIDATED"
-      : "UNVALIDATABLE";
+        ? "VALIDATED"
+        : "UNVALIDATABLE";
     const parts = extractAddressParts(
       r?.uspsData?.standardizedAddress?.firstAddressLine,
       r?.address?.addressComponents,
@@ -197,8 +209,10 @@ export async function autoMeasureRoofBbox(lat: number, lng: number): Promise<Aut
     const ne = data.boundingBox?.ne;
     const area = data.solarPotential?.wholeRoofStats?.areaMeters2;
     if (
-      typeof sw?.latitude !== "number" || typeof sw?.longitude !== "number" ||
-      typeof ne?.latitude !== "number" || typeof ne?.longitude !== "number" ||
+      typeof sw?.latitude !== "number" ||
+      typeof sw?.longitude !== "number" ||
+      typeof ne?.latitude !== "number" ||
+      typeof ne?.longitude !== "number" ||
       typeof area !== "number"
     ) {
       return { ok: false, reason: "malformed_response" };
@@ -389,10 +403,7 @@ function soqlEq(field: string, value: string): string {
   return `${field}='${value.replace(/'/g, "''")}'`;
 }
 
-function outerRingFromGeoJson(geometry: {
-  type?: string;
-  coordinates?: unknown;
-}): { lat: number; lng: number }[] {
+function outerRingFromGeoJson(geometry: { type?: string; coordinates?: unknown }): { lat: number; lng: number }[] {
   const coords = geometry.coordinates;
   let ring: unknown;
   if (geometry.type === "MultiPolygon") {
@@ -410,9 +421,7 @@ function outerRingFromGeoJson(geometry: {
   return out;
 }
 
-export async function measureFromAddress(
-  input: MeasureFromAddressInput,
-): Promise<MeasureFromAddressResult> {
+export async function measureFromAddress(input: MeasureFromAddressInput): Promise<MeasureFromAddressResult> {
   try {
     const easWhere = [
       soqlEq("address_number", input.addressNumber),
@@ -421,8 +430,7 @@ export async function measureFromAddress(
       "parcel_number IS NOT NULL",
     ].join(" AND ");
     const eas = (await socrataFetch(
-      `${DATASF}/ramy-di5m.json?$where=${encodeURIComponent(easWhere)}` +
-        `&$select=parcel_number,block,lot&$limit=1`,
+      `${DATASF}/ramy-di5m.json?$where=${encodeURIComponent(easWhere)}` + `&$select=parcel_number,block,lot&$limit=1`,
     )) as { parcel_number?: string }[];
     const blklot = eas?.[0]?.parcel_number;
     if (!blklot) return { ok: false, reason: "no_parcel_match" };
@@ -441,9 +449,7 @@ export async function measureFromAddress(
     const geo = (await socrataFetch(
       `${DATASF}/acdm-wktn.geojson?$where=${encodeURIComponent(soqlEq("blklot", blklot))}&$limit=1`,
     )) as { features?: { geometry?: { type?: string; coordinates?: unknown } }[] };
-    const parcel_ring = geo?.features?.[0]?.geometry
-      ? outerRingFromGeoJson(geo.features[0].geometry)
-      : [];
+    const parcel_ring = geo?.features?.[0]?.geometry ? outerRingFromGeoJson(geo.features[0].geometry) : [];
 
     return { ok: true, blklot, mapblklot, shared_multi_unit: false, parcel_ring };
   } catch (e) {
