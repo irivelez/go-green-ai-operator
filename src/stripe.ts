@@ -191,8 +191,8 @@ export async function createSubscriptionCheckout(
   }));
 
   const successUrl =
-    input.successUrl ?? "http://localhost:3000/funnel/success?session_id={CHECKOUT_SESSION_ID}";
-  const cancelUrl = input.cancelUrl ?? "http://localhost:3000/funnel/cancel";
+    input.successUrl ?? "http://localhost:3000/agent?checkout=success&session_id={CHECKOUT_SESSION_ID}";
+  const cancelUrl = input.cancelUrl ?? "http://localhost:3000/agent?checkout=cancelled";
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",

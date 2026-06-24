@@ -13,7 +13,6 @@
     "agent": "STORE_BACKEND=json tsx watch src/index.ts",
     "test:core": "tsx src/core.test.ts",
     "test:operator": "tsx src/operator.test.ts",
-    "test:agent": "tsx src/agent.test.ts",
     "test": "tsx src/core.test.ts && tsx src/operator.test.ts",
     "test:all": "node scripts/test-all.mjs",
     "eval": "tsx src/agent-evals.ts",

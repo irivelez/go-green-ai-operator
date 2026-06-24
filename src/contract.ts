@@ -475,51 +475,10 @@ export interface CheckoutResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. FUNNEL STATE MACHINE
+// 10. LEAD — canonical re-export of the store.ts Lead
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type FunnelStep =
-  | "intent" // describe need
-  | "space_photos" // address + photos
-  | "tier_recommend" // AI recommends, customer confirms
-  | "identity" // name + email + phone + address (mid-flow, §E2)
-  | "quote" // see the price + cart
-  | "checkout" // Stripe
-  | "schedule" // pick a real slot (pay-first → then-pick, §D1)
-  | "confirmed" // booked + work order written
-  | "waitlist" // no slot within 14d — no charge
-  | "human_review"; // escalated — no charge
-
-export interface FunnelState {
-  step: FunnelStep;
-  language: "en" | "es";
-  intent?: string;
-  address?: string;
-  photos: string[];
-  visionAssessment?: VisionAssessment;
-  recommendedTier?: Tier;
-  confirmedTier?: Tier;
-  selectedAddOns: string[]; // AddOn.id[] currently in cart
-  frequency?: Frequency;
-  identity?: {
-    name?: string;
-    email?: string;
-    phone?: string;
-    address?: string; // required at the pricing step (§E2)
-  };
-  pricingResult?: PricingResult;
-  selectedSlotId?: string;
-  checkoutResult?: CheckoutResult;
-  escalation?: EscalationFlag;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 10. LEAD — extends the existing store.ts Lead with funnel state
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface Lead extends StoreLead {
-  funnelState?: FunnelState;
-}
+export type Lead = StoreLead;
 
 // Re-export for downstream importers that want the canonical names from here.
 export type { StoreLead };
