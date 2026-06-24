@@ -326,7 +326,7 @@ function templateReply(ctx: ReplyCtx): string {
         ? (es ? " Antes del servicio recurrente recomendamos una limpieza inicial (se cotiza por separado)." : " Before recurring service we'd recommend an initial cleanup (quoted separately).")
         : "";
       return es
-        ? `Gracias${name}. Según lo que vemos, recomendamos mantenimiento ${frEs(ctx.lead.desired_frequency)} plan ${ctx.pkg}, en un rango aproximado de $${ctx.range.low}–$${ctx.range.high} por visita (el precio final requiere una revisión en sitio).${cleanup} Tenemos disponibilidad el ${fmtSlot(a!, "es")} o el ${fmtSlot(b!, "es")}. ¿Cuál le funciona mejor?`
+        ? `Gracias${name}. Según lo que vemos, recomendamos mantenimiento ${frequencyEs(ctx.lead.desired_frequency)} plan ${ctx.pkg}, en un rango aproximado de $${ctx.range.low}–$${ctx.range.high} por visita (el precio final requiere una revisión en sitio).${cleanup} Tenemos disponibilidad el ${fmtSlot(a!, "es")} o el ${fmtSlot(b!, "es")}. ¿Cuál le funciona mejor?`
         : `Thank you${name}. Based on what we can see, we'd recommend ${ctx.lead.desired_frequency} ${ctx.pkg} maintenance, in an approximate range of $${ctx.range.low}–$${ctx.range.high} per visit (final pricing needs an on-site review).${cleanup} We have availability on ${fmtSlot(a!, "en")} or ${fmtSlot(b!, "en")}. Which works better for you?`;
     }
     case "booked":
@@ -336,7 +336,7 @@ function templateReply(ctx: ReplyCtx): string {
   }
 }
 
-function frEs(freq?: string): string {
+function frequencyEs(freq?: string): string {
   if (freq === "weekly") return "semanal";
   if (freq === "biweekly") return "quincenal";
   if (freq === "monthly") return "mensual";
