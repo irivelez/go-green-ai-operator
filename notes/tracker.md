@@ -43,7 +43,7 @@ gate names the full path set explicitly (recon Step 1).
 | 2 | Magic literals → constants | done | | 5 consts, selective: `SLOPE_FLAT_MAX_PCT`/`SLOPE_MODERATE_MAX_PCT` (geo:301, pricing-bearing), `REASON_CODE_MAX` (×2, hitl) + `CORRECTED_VALUE_MAX`, `MAX_TIER_INCLUDES` (×2, agent-tools). Skipped 3×3-grid 3/2/9 (idiomatic) + `maxSteps:8` (key self-names). Gate green. |
 | 3 | DRY (within a system) | done | | **Empty surface** (valid). Examined: agent-tools `channel ?? "form"` ×8 — incidental, 7/8 also read `existing` for other fields → over-reach to merge; `channel ?? "form"` default spans store/stripe/routes → cross-boundary; two `vision_assessment ?? {}` casts target different types; route parsing not a uniform idiom. No safe within-boundary merge. Notes-only commit. |
 | 4 | Dead code, 2nd pass | done | | 1 orphan: `type CheckoutResult` import in stripe.ts — orphaned by Phase-1 `confirmPayment` removal (`createSubscriptionCheckout` returns `{url,sessionId}`, not `CheckoutResult`). Type def kept (still used at contract.ts:512). Gate green. |
-| 5 | Identify variables | pending | | notes-only |
+| 5 | Identify variables | done | | notes/renames.md — 9 candidates (V1-V9), all function-local; idiomatic shorts (i/j, sw/ne, regex m, date d/s, seed t) left |
 | 6 | Propose variable names | pending | | notes-only |
 | 7 | Apply variable renames | pending | | trifecta |
 | 8 | Identify functions/params | pending | | notes-only |
