@@ -113,6 +113,12 @@ export interface Lead {
   // the flat PRICE_BOOK[tier].perVisit (review blocker A).
   per_visit_price?: number;
   monthly_price?: number;
+  // PROOF OF PAYMENT (not just status). Set ONLY by handleStripeEvent (stripe.ts)
+  // when a Stripe checkout.session.completed fires — an ISO timestamp of the
+  // confirmed first charge. confirm_booking gates on this, NOT on status alone:
+  // operator.ts / hitl.ts also set status "Ready to Schedule" for the dashboard
+  // view without any charge, so the status string is not proof a card was charged.
+  paid_at?: string;
   intent?: string;
   _actions: string[]; // idempotency ledger of (action_hash)
   events?: LeadEvent[]; // HITL learning loop — owner corrections + agent decisions

@@ -308,7 +308,12 @@ export async function runConfirmBooking(
 ): Promise<ConfirmBookingResult> {
   const lead = await getLead(ctx.leadId);
   if (!lead) return { status: "lead_missing", message: "Lead not found." };
-  if (!PAID_STATES.has(lead.status)) {
+  // Gate on PROOF of a real Stripe charge (lead.paid_at, set ONLY by the webhook
+  // reducer handleStripeEvent), not on the status string alone. operator.ts and
+  // hitl.ts also set status "Ready to Schedule" for the dashboard view WITHOUT any
+  // charge — gating on status alone is a latent payment-gate bypass. Require BOTH:
+  // a paid status AND the webhook's payment marker.
+  if (!PAID_STATES.has(lead.status) || !lead.paid_at) {
     return {
       status: "payment_required",
       message: "Booking is only available after the first payment is confirmed.",

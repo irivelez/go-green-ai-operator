@@ -169,10 +169,18 @@ console.log("\n=== confirm_booking — payment gate (no booking before paid) ===
   const blocked = await runConfirmBooking(ctx("L5"), { slotId: firstSlot });
   ok("unpaid lead → booking refused (payment_required)", blocked.status === "payment_required", JSON.stringify(blocked));
 
-  // Simulate webhook flipping the lead to paid.
+  // The operator/hitl path: status "Ready to Schedule" is set for the dashboard
+  // view WITHOUT any Stripe charge (no paid_at). confirm_booking must STILL refuse
+  // — gating on the status string alone would be a payment-gate bypass.
   await upsertLead({ lead_id: "L5", channel: "form", status: "Ready to Schedule" });
+  const noProof = await runConfirmBooking(ctx("L5"), { slotId: firstSlot });
+  ok("Ready-to-Schedule WITHOUT paid_at (operator/hitl path) → still payment_required", noProof.status === "payment_required", JSON.stringify(noProof));
+
+  // Simulate the Stripe webhook (handleStripeEvent) flipping the lead to paid:
+  // it sets BOTH status "Ready to Schedule" AND the paid_at proof-of-charge marker.
+  await upsertLead({ lead_id: "L5", channel: "form", status: "Ready to Schedule", paid_at: new Date().toISOString() });
   const booked = await runConfirmBooking(ctx("L5"), { slotId: firstSlot });
-  ok("paid lead → booking succeeds", booked.status === "booked", JSON.stringify(booked));
+  ok("genuinely paid lead (status + paid_at) → booking succeeds", booked.status === "booked", JSON.stringify(booked));
   ok("lead moved to Scheduled", (await getLead("L5"))?.status === "Scheduled" || (await getLead("L5"))?.status === "Work Order Created");
 }
 
@@ -922,6 +930,7 @@ console.log("\n=== T10.f: confirm_booking — calendar wire is fire-and-forget; 
     channel: "form",
     photos: ["x"],
     status: "Ready to Schedule",
+    paid_at: new Date().toISOString(), // webhook proof-of-charge — required by confirm_booking
     address: "123 Main St, SF 94110",
     confirmed_sqft: 2500,
     slope_tier: "flat",

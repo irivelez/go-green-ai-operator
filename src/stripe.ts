@@ -279,6 +279,9 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebh
     lead_id: leadId,
     channel: existing?.channel ?? "form",
     status: "Ready to Schedule",
+    // Proof of an ACTUAL charge — confirm_booking gates on this, not on the status
+    // string alone (operator.ts / hitl.ts also set "Ready to Schedule" w/o a charge).
+    paid_at: new Date().toISOString(),
     internal_notes: [
       existing?.internal_notes,
       `Stripe checkout paid: session=${session.id} sub=${subscriptionId ?? "?"} amount_total=${session.amount_total ?? 0}`,
