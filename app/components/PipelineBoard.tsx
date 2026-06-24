@@ -12,7 +12,7 @@ const COLUMN_TINTS: Record<LeadStatus, string> = {
   "Info Received": "from-violet-50/50",
   "AI Qualified": "from-moss-50/80",
   "Ready to Schedule": "from-moss-100/70",
-  "Scheduled": "from-emerald-50/70",
+  Scheduled: "from-emerald-50/70",
   "Work Order Created": "from-emerald-100/60",
   "Needs Human Review": "from-amber-50/70",
   "Not a Fit": "from-stone-50/40",
@@ -25,7 +25,7 @@ const COLUMN_DOT: Record<LeadStatus, string> = {
   "Info Received": "bg-violet-400",
   "AI Qualified": "bg-moss-400",
   "Ready to Schedule": "bg-moss-500",
-  "Scheduled": "bg-emerald-500",
+  Scheduled: "bg-emerald-500",
   "Work Order Created": "bg-emerald-600",
   "Needs Human Review": "bg-amber-500",
   "Not a Fit": "bg-stone-400",
@@ -50,23 +50,13 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
 
   return (
     <section className="space-y-4">
-      <SectionHeader
-        title="Pipeline"
-        subtitle="Lead flow by stage — autonomous unless flagged"
-        count={leads.length}
-      />
+      <SectionHeader title="Pipeline" subtitle="Lead flow by stage — autonomous unless flagged" count={leads.length} />
 
       <div className="rail -mx-2 overflow-x-auto px-2 pb-3">
         <div className="flex gap-3 min-w-max">
           {STAGE_ORDER.map((stage) => {
             const items = grouped.get(stage) ?? [];
-            return (
-              <PipelineColumn
-                key={stage}
-                stage={stage}
-                items={items}
-              />
-            );
+            return <PipelineColumn key={stage} stage={stage} items={items} />;
           })}
         </div>
       </div>
@@ -117,24 +107,14 @@ function PipelineColumn({ stage, items }: { stage: LeadStatus; items: Lead[] }) 
             empty
           </div>
         ) : (
-          items.map((lead) => (
-            <LeadCard key={lead.lead_id} lead={lead} compact />
-          ))
+          items.map((lead) => <LeadCard key={lead.lead_id} lead={lead} compact />)
         )}
       </div>
     </div>
   );
 }
 
-function SectionHeader({
-  title,
-  subtitle,
-  count,
-}: {
-  title: string;
-  subtitle?: string;
-  count?: number;
-}) {
+function SectionHeader({ title, subtitle, count }: { title: string; subtitle?: string; count?: number }) {
   return (
     <div className="flex items-end justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-3">
@@ -142,12 +122,8 @@ function SectionHeader({
           <LayoutGrid className="h-4 w-4" strokeWidth={1.8} />
         </div>
         <div>
-          <h2 className="font-display text-2xl font-medium text-bark-900 leading-tight">
-            {title}
-          </h2>
-          {subtitle && (
-            <p className="text-[12px] text-moss-700/70 mt-0.5">{subtitle}</p>
-          )}
+          <h2 className="font-display text-2xl font-medium text-bark-900 leading-tight">{title}</h2>
+          {subtitle && <p className="text-[12px] text-moss-700/70 mt-0.5">{subtitle}</p>}
         </div>
       </div>
       {count !== undefined && (

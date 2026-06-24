@@ -5,7 +5,8 @@
 import { pricePerVisit, quoteRange } from "./pricing";
 import { FREQUENCY_MULTIPLIER } from "./contract";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
@@ -18,13 +19,23 @@ console.log("\n=== Scenario 1: medium yard (2500 sqft), flat, biweekly — exact
   // base 173 (midpoint of biweekly [155,190]) × 1.0 = 173
   ok("perVisit === 173", r.perVisit === 173, `got ${r.perVisit}`);
   ok("currency USD", r.currency === "USD");
-  ok("monthly === perVisit × biweekly multiplier",
+  ok(
+    "monthly === perVisit × biweekly multiplier",
     Math.abs(r.monthly - r.perVisit * FREQUENCY_MULTIPLIER["biweekly"]) < 0.005,
-    `got ${r.monthly}, expected ${r.perVisit * FREQUENCY_MULTIPLIER["biweekly"]}`);
-  ok("assumptions mention area bucket", r.assumptions.some((a) => /medium|bucket|sqft/i.test(a)));
-  ok("assumptions mention slope multiplier", r.assumptions.some((a) => /slope/i.test(a)));
-  ok("assumptions mention on-site review",
-    r.assumptions.some((a) => /final price confirmed on first on-site visit/i.test(a)));
+    `got ${r.monthly}, expected ${r.perVisit * FREQUENCY_MULTIPLIER["biweekly"]}`,
+  );
+  ok(
+    "assumptions mention area bucket",
+    r.assumptions.some((a) => /medium|bucket|sqft/i.test(a)),
+  );
+  ok(
+    "assumptions mention slope multiplier",
+    r.assumptions.some((a) => /slope/i.test(a)),
+  );
+  ok(
+    "assumptions mention on-site review",
+    r.assumptions.some((a) => /final price confirmed on first on-site visit/i.test(a)),
+  );
 }
 
 console.log("\n=== Scenario 2: slope multipliers (flat→moderate→steep) ===");
@@ -32,38 +43,54 @@ console.log("\n=== Scenario 2: slope multipliers (flat→moderate→steep) ===")
   const flat = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "flat", frequency: "biweekly" });
   const moderate = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "moderate", frequency: "biweekly" });
   const steep = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "steep", frequency: "biweekly" });
-  ok("moderate ≈ flat × 1.15", approxEq(moderate.perVisit, flat.perVisit * 1.15),
-    `moderate=${moderate.perVisit}, flat×1.15=${flat.perVisit * 1.15}`);
-  ok("steep ≈ flat × 1.35", approxEq(steep.perVisit, flat.perVisit * 1.35),
-    `steep=${steep.perVisit}, flat×1.35=${flat.perVisit * 1.35}`);
+  ok(
+    "moderate ≈ flat × 1.15",
+    approxEq(moderate.perVisit, flat.perVisit * 1.15),
+    `moderate=${moderate.perVisit}, flat×1.15=${flat.perVisit * 1.15}`,
+  );
+  ok(
+    "steep ≈ flat × 1.35",
+    approxEq(steep.perVisit, flat.perVisit * 1.35),
+    `steep=${steep.perVisit}, flat×1.35=${flat.perVisit * 1.35}`,
+  );
 }
 
 console.log("\n=== Scenario 3: measured_area_sqft <= 0 throws ===");
 {
-  let threw = false; let msg = "";
+  let threw = false;
+  let msg = "";
   try {
     pricePerVisit({ measured_area_sqft: 0, slope_tier: "flat", frequency: "biweekly" });
-  } catch (e) { threw = true; msg = (e as Error).message; }
+  } catch (e) {
+    threw = true;
+    msg = (e as Error).message;
+  }
   ok("throws on sqft=0", threw, msg);
   ok("error mentions measured_area_sqft", /measured_area_sqft/i.test(msg), msg);
 
   let threwNeg = false;
   try {
     pricePerVisit({ measured_area_sqft: -10, slope_tier: "flat", frequency: "biweekly" });
-  } catch { threwNeg = true; }
+  } catch {
+    threwNeg = true;
+  }
   ok("throws on negative sqft", threwNeg);
 }
 
 console.log("\n=== Scenario 4: monthly = perVisit × FREQUENCY_MULTIPLIER (all 3 frequencies) ===");
 {
   const weekly = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "flat", frequency: "weekly" });
-  ok("weekly: monthly = perVisit × 4.33",
+  ok(
+    "weekly: monthly = perVisit × 4.33",
     Math.abs(weekly.monthly - weekly.perVisit * FREQUENCY_MULTIPLIER["weekly"]) < 0.01,
-    `${weekly.monthly} vs ${weekly.perVisit * 4.33}`);
+    `${weekly.monthly} vs ${weekly.perVisit * 4.33}`,
+  );
   const monthly = pricePerVisit({ measured_area_sqft: 2500, slope_tier: "flat", frequency: "monthly" });
-  ok("monthly: monthly = perVisit × 1.0",
+  ok(
+    "monthly: monthly = perVisit × 1.0",
     Math.abs(monthly.monthly - monthly.perVisit * 1.0) < 0.01,
-    `${monthly.monthly}`);
+    `${monthly.monthly}`,
+  );
 }
 
 console.log("\n=== Scenario 5: area buckets — small/medium/large boundaries ===");

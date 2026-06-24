@@ -9,7 +9,7 @@
 //
 // This is the same isolation pattern as Stripe: the model can propose, but
 // money + measurements stay outside its context window.
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { runConfirmArea, type ToolContext } from "@/src/agent-tools";
 
@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
   const json = await req.json().catch(() => null);
   const parsed = Body.safeParse(json);
   if (!parsed.success) {
-    return new Response(
-      JSON.stringify({ error: "invalid body", issues: parsed.error.issues }),
-      { status: 400, headers: { "content-type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: "invalid body", issues: parsed.error.issues }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
   }
   const { leadId, language, path } = parsed.data;
   const ctx: ToolContext = { leadId, language };

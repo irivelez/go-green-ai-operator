@@ -27,11 +27,7 @@ export function ReviewInbox({
   onAction,
 }: {
   leads: Lead[];
-  onAction: (
-    leadId: string,
-    action: "approve" | "reject",
-    payload: ReviewActionPayload,
-  ) => Promise<void>;
+  onAction: (leadId: string, action: "approve" | "reject", payload: ReviewActionPayload) => Promise<void>;
 }) {
   const queue = leads.filter((l) => l.status === "Needs Human Review");
 
@@ -43,12 +39,8 @@ export function ReviewInbox({
             <ShieldAlert className="h-4 w-4" strokeWidth={1.8} />
           </div>
           <div className="min-w-0">
-            <h2 className="font-display text-lg font-medium text-bark-900 leading-tight">
-              Review queue
-            </h2>
-            <p className="text-[11px] text-amber-900/70 mt-0.5">
-              Cases the agent escalated — humans take the call
-            </p>
+            <h2 className="font-display text-lg font-medium text-bark-900 leading-tight">Review queue</h2>
+            <p className="text-[11px] text-amber-900/70 mt-0.5">Cases the agent escalated — humans take the call</p>
           </div>
         </div>
         <span
@@ -72,9 +64,7 @@ export function ReviewInbox({
             </p>
           </div>
         ) : (
-          queue.map((lead) => (
-            <ReviewRow key={lead.lead_id} lead={lead} onAction={onAction} />
-          ))
+          queue.map((lead) => <ReviewRow key={lead.lead_id} lead={lead} onAction={onAction} />)
         )}
       </div>
     </section>
@@ -86,11 +76,7 @@ function ReviewRow({
   onAction,
 }: {
   lead: Lead;
-  onAction: (
-    leadId: string,
-    action: "approve" | "reject",
-    payload: ReviewActionPayload,
-  ) => Promise<void>;
+  onAction: (leadId: string, action: "approve" | "reject", payload: ReviewActionPayload) => Promise<void>;
 }) {
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   // Which action's reason panel is open (null = closed). Inline panel, not a portal —
@@ -152,18 +138,14 @@ function ReviewRow({
 
           {lead.escalation_reason && (
             <p className="mt-1.5 text-[12px] leading-relaxed text-amber-900">
-              <span className="text-[10px] uppercase tracking-wider font-semibold opacity-70">
-                Why escalated:
-              </span>{" "}
+              <span className="text-[10px] uppercase tracking-wider font-semibold opacity-70">Why escalated:</span>{" "}
               {lead.escalation_reason}
             </p>
           )}
 
           {lead.internal_notes && (
             <p className="mt-1.5 text-[12px] leading-relaxed text-moss-800/85">
-              <span className="text-[10px] uppercase tracking-wider font-semibold opacity-60">
-                Notes:
-              </span>{" "}
+              <span className="text-[10px] uppercase tracking-wider font-semibold opacity-60">Notes:</span>{" "}
               {lead.internal_notes}
             </p>
           )}
@@ -172,9 +154,7 @@ function ReviewRow({
             <div className="mt-1.5 flex items-center gap-2 text-[11px] text-moss-700/70">
               {range && <span className="font-medium text-moss-900">{range}</span>}
               {range && (lead.address || lead.zone) && <span className="opacity-50">·</span>}
-              {(lead.address || lead.zone) && (
-                <span className="truncate">{lead.address || lead.zone}</span>
-              )}
+              {(lead.address || lead.zone) && <span className="truncate">{lead.address || lead.zone}</span>}
             </div>
           )}
         </div>
@@ -211,9 +191,7 @@ function ReviewRow({
             <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-900/75">
               {isApprovePanel ? "Approve" : "Reject"} — why?
             </span>
-            <span className="text-[11px] text-amber-900/60">
-              captured to the learning log
-            </span>
+            <span className="text-[11px] text-amber-900/60">captured to the learning log</span>
           </div>
 
           <label className="block">

@@ -7,7 +7,8 @@ import { ADD_ON_CATALOG } from "./contract";
 
 const { VisionAssessmentSchema } = __test__;
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
@@ -40,8 +41,7 @@ console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_si
     },
   };
   const r = VisionAssessmentSchema.safeParse(valid);
-  ok("valid slope_signals object parses successfully", r.success,
-    r.success ? "" : r.error.message);
+  ok("valid slope_signals object parses successfully", r.success, r.success ? "" : r.error.message);
 }
 
 // (b) Object WITH stale yard_size_estimate and WITHOUT slope_signals → must FAIL
@@ -51,8 +51,11 @@ console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_si
     yard_size_estimate: "medium",
   };
   const r = VisionAssessmentSchema.safeParse(stale);
-  ok("stale yard_size_estimate (no slope_signals) is rejected", !r.success,
-    r.success ? "WRONGLY accepted" : "correctly rejected");
+  ok(
+    "stale yard_size_estimate (no slope_signals) is rejected",
+    !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected",
+  );
 }
 
 // (c) slope_signals with all steepness_hint values accepted
@@ -68,8 +71,7 @@ console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_si
       },
     };
     const r = VisionAssessmentSchema.safeParse(obj);
-    ok(`steepness_hint "${hint}" accepted`, r.success,
-      r.success ? "" : r.error.message);
+    ok(`steepness_hint "${hint}" accepted`, r.success, r.success ? "" : r.error.message);
   }
 }
 
@@ -85,82 +87,89 @@ console.log("\n=== T4: VisionAssessmentSchema — slope_signals replaces yard_si
     },
   };
   const r = VisionAssessmentSchema.safeParse(bad);
-  ok("invalid steepness_hint rejected", !r.success,
-    r.success ? "WRONGLY accepted" : "correctly rejected");
+  ok("invalid steepness_hint rejected", !r.success, r.success ? "WRONGLY accepted" : "correctly rejected");
 }
 
 // (e) Missing slope_signals entirely → rejected
 {
   const missing = { ...BASE };
   const r = VisionAssessmentSchema.safeParse(missing);
-  ok("missing slope_signals rejected", !r.success,
-    r.success ? "WRONGLY accepted" : "correctly rejected");
+  ok("missing slope_signals rejected", !r.success, r.success ? "WRONGLY accepted" : "correctly rejected");
 }
 
 // (f) Schema still rejects hallucinated add-on ids (regression)
 {
   const badAddon = {
     ...BASE,
-    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "none",
+    },
     detected_extras: ["totally-made-up-addon"],
   };
   const r = VisionAssessmentSchema.safeParse(badAddon);
-  ok("schema still rejects unknown add-on ids", !r.success,
-    r.success ? "WRONGLY accepted" : "correctly rejected");
+  ok("schema still rejects unknown add-on ids", !r.success, r.success ? "WRONGLY accepted" : "correctly rejected");
 }
 
 // (g) Schema still rejects out-of-set tier (regression)
 {
   const badTier = {
     ...BASE,
-    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "none",
+    },
     recommended_tier: "platinum",
   };
   const r = VisionAssessmentSchema.safeParse(badTier);
-  ok("schema still rejects tier outside {essential,signature,estate}", !r.success,
-    r.success ? "WRONGLY accepted" : "correctly rejected");
+  ok(
+    "schema still rejects tier outside {essential,signature,estate}",
+    !r.success,
+    r.success ? "WRONGLY accepted" : "correctly rejected",
+  );
 }
 
 // (h) Schema accepts a valid whitelisted assessment with slope_signals (regression)
 {
   const good = {
     ...BASE,
-    slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+    slope_signals: {
+      stairs_visible: false,
+      retaining_wall_visible: false,
+      terraces_visible: false,
+      steepness_hint: "none",
+    },
     detected_extras: [ADD_ON_CATALOG[0]!.id],
   };
   const r = VisionAssessmentSchema.safeParse(good);
-  ok("schema accepts valid assessment with whitelisted add-on", r.success,
-    r.success ? "" : r.error.message);
+  ok("schema accepts valid assessment with whitelisted add-on", r.success, r.success ? "" : r.error.message);
 }
 
 // (i) extractJsonObject strips code fences (regression)
 {
-  const fenced = "```json\n{\"a\":1}\n```";
-  ok("extractJsonObject strips ```json fences",
-    __test__.extractJsonObject(fenced).trim() === '{"a":1}');
+  const fenced = '```json\n{"a":1}\n```';
+  ok("extractJsonObject strips ```json fences", __test__.extractJsonObject(fenced).trim() === '{"a":1}');
 }
 
 console.log("\n=== SEC-C: isAllowedPhoto — only base64 image data: URIs reach the model ===");
 {
-  ok("data:image/png;base64,QQ== accepted",
-    isAllowedPhoto("data:image/png;base64,QQ==") === true);
-  ok("data:image/jpeg;base64,QQ== accepted",
-    isAllowedPhoto("data:image/jpeg;base64,QQ==") === true);
-  ok("data:image/webp;base64,QQ== accepted",
-    isAllowedPhoto("data:image/webp;base64,QQ==") === true);
-  ok("data:image/gif;base64,QQ== accepted",
-    isAllowedPhoto("data:image/gif;base64,QQ==") === true);
+  ok("data:image/png;base64,QQ== accepted", isAllowedPhoto("data:image/png;base64,QQ==") === true);
+  ok("data:image/jpeg;base64,QQ== accepted", isAllowedPhoto("data:image/jpeg;base64,QQ==") === true);
+  ok("data:image/webp;base64,QQ== accepted", isAllowedPhoto("data:image/webp;base64,QQ==") === true);
+  ok("data:image/gif;base64,QQ== accepted", isAllowedPhoto("data:image/gif;base64,QQ==") === true);
 
-  ok("http://169.254.169.254/ rejected (SSRF)",
-    isAllowedPhoto("http://169.254.169.254/") === false);
-  ok("https://evil.com/x.png rejected (exfil)",
-    isAllowedPhoto("https://evil.com/x.png") === false);
-  ok("data:text/html;base64,.. rejected (non-image mime)",
-    isAllowedPhoto("data:text/html;base64,QQ==") === false);
-  ok("data:image/svg+xml;base64,.. rejected (SVG → JS exec)",
-    isAllowedPhoto("data:image/svg+xml;base64,QQ==") === false);
-  ok("data:image/png URL without base64 marker rejected",
-    isAllowedPhoto("data:image/png,QQ==") === false);
+  ok("http://169.254.169.254/ rejected (SSRF)", isAllowedPhoto("http://169.254.169.254/") === false);
+  ok("https://evil.com/x.png rejected (exfil)", isAllowedPhoto("https://evil.com/x.png") === false);
+  ok("data:text/html;base64,.. rejected (non-image mime)", isAllowedPhoto("data:text/html;base64,QQ==") === false);
+  ok(
+    "data:image/svg+xml;base64,.. rejected (SVG → JS exec)",
+    isAllowedPhoto("data:image/svg+xml;base64,QQ==") === false,
+  );
+  ok("data:image/png URL without base64 marker rejected", isAllowedPhoto("data:image/png,QQ==") === false);
   ok("empty string rejected", isAllowedPhoto("") === false);
   ok("file:///etc/passwd rejected", isAllowedPhoto("file:///etc/passwd") === false);
 }
@@ -171,8 +180,10 @@ async function main() {
     const empty = await analyzeYardPhotos([]);
     ok("empty url list yields confidence 0", empty.confidence === 0, `got ${empty.confidence}`);
     ok("sentinel has slope_signals", "slope_signals" in empty, JSON.stringify(empty));
-    ok("sentinel slope_signals.steepness_hint is 'none'",
-      (empty as { slope_signals?: { steepness_hint?: string } }).slope_signals?.steepness_hint === "none");
+    ok(
+      "sentinel slope_signals.steepness_hint is 'none'",
+      (empty as { slope_signals?: { steepness_hint?: string } }).slope_signals?.steepness_hint === "none",
+    );
   }
 
   // (k) SEC-C regression: analyzeYardPhotos drops disallowed URLs BEFORE the
@@ -182,9 +193,11 @@ async function main() {
   {
     delete process.env.ANTHROPIC_API_KEY;
     const remoteOnly = await analyzeYardPhotos(["https://evil.com/x.png"]);
-    ok("remote URL filtered out → sentinel 'no photos provided'",
+    ok(
+      "remote URL filtered out → sentinel 'no photos provided'",
       remoteOnly.confidence === 0 && (remoteOnly.notes ?? "").includes("no photos"),
-      `got notes=${remoteOnly.notes}`);
+      `got notes=${remoteOnly.notes}`,
+    );
   }
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

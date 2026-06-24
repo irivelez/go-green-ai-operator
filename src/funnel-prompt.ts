@@ -33,11 +33,11 @@ const FREQ_ORDER: Frequency[] = ["weekly", "biweekly", "monthly"];
 
 function tierBlock(): string {
   return TIER_ORDER.map((id) => {
-    const t = PRICE_BOOK[id];
-    const includes = t.includes.slice(0, 4).join("; ");
-    const notIncluded = t.notIncluded.slice(0, 3).join(", ");
+    const tierSpec = PRICE_BOOK[id];
+    const includes = tierSpec.includes.slice(0, 4).join("; ");
+    const notIncluded = tierSpec.notIncluded.slice(0, 3).join(", ");
     return [
-      `- **${t.name}** (id: ${t.id}) — $${t.perVisit} per visit, flat. ${t.blurb}`,
+      `- **${tierSpec.name}** (id: ${tierSpec.id}) — $${tierSpec.perVisit} per visit, flat. ${tierSpec.blurb}`,
       `    Includes e.g.: ${includes}.`,
       `    NOT included (always a separate quoted item): ${notIncluded}, …`,
     ].join("\n");
@@ -45,9 +45,7 @@ function tierBlock(): string {
 }
 
 function subscriptionBlock(): string {
-  const lines = FREQ_ORDER.map(
-    (f) => `    - ${f}: monthly = per-visit × ${FREQUENCY_MULTIPLIER[f]}`,
-  ).join("\n");
+  const lines = FREQ_ORDER.map((f) => `    - ${f}: monthly = per-visit × ${FREQUENCY_MULTIPLIER[f]}`).join("\n");
   return [
     "The customer subscribes monthly and the FIRST month is charged now to lock the booking.",
     "Monthly = per-visit price × frequency multiplier:",
@@ -66,13 +64,9 @@ function fixedAddOnBlock(): string {
     "seasonal-cleanup",
     CLEANUP_GATING_ADDON_ID,
   ];
-  const sample = sampleIds
-    .map((id) => addOnById(id))
-    .filter((a): a is NonNullable<typeof a> => Boolean(a));
+  const sample = sampleIds.map((id) => addOnById(id)).filter((a): a is NonNullable<typeof a> => Boolean(a));
   const total = fixedAddOns().length;
-  const lines = sample
-    .map((a) => `    - ${a.name} — $${a.priceStartingAt} ${a.unit}`)
-    .join("\n");
+  const lines = sample.map((a) => `    - ${a.name} — $${a.priceStartingAt} ${a.unit}`).join("\n");
   return [
     `Fixed-price add-ons (${total} in the catalog) are whitelisted for autonomous checkout. Examples:`,
     lines,
@@ -81,21 +75,18 @@ function fixedAddOnBlock(): string {
 
 function openEndedAddOnBlock(): string {
   const lines = openEndedAddOnsList()
-    .map(
-      (a) =>
-        `    - ${a.name} — from $${a.priceStartingAt} ${a.unit} (${a.openEndedReason})`,
-    )
+    .map((a) => `    - ${a.name} — from $${a.priceStartingAt} ${a.unit} (${a.openEndedReason})`)
     .join("\n");
   return [
-    "Open-ended add-ons are per-unit / per-hour / “+ parts” / “+ plant cost”. These are NEVER auto-charged — they go to a human for a quote. If the customer wants one, acknowledge it warmly, capture the interest, and call mark_escalation with primary=\"open_ended_addon\":",
+    'Open-ended add-ons are per-unit / per-hour / “+ parts” / “+ plant cost”. These are NEVER auto-charged — they go to a human for a quote. If the customer wants one, acknowledge it warmly, capture the interest, and call mark_escalation with primary="open_ended_addon":',
     lines,
   ].join("\n");
 }
 
 function cleanupGatingLine(): string {
-  const c = addOnById(CLEANUP_GATING_ADDON_ID);
-  if (!c) return "";
-  return `When the photos clearly show a neglected yard, a one-time cleanup (${c.name} — $${c.priceStartingAt} ${c.unit}) is required in the cart before recurring service can start. Frame it as getting the garden to a maintainable baseline, never as a penalty.`;
+  const cleanup = addOnById(CLEANUP_GATING_ADDON_ID);
+  if (!cleanup) return "";
+  return `When the photos clearly show a neglected yard, a one-time cleanup (${cleanup.name} — $${cleanup.priceStartingAt} ${cleanup.unit}) is required in the cart before recurring service can start. Frame it as getting the garden to a maintainable baseline, never as a penalty.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

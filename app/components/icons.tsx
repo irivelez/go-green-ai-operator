@@ -3,13 +3,7 @@
 import { Mail, MessageCircle, Phone, Send, FileText } from "lucide-react";
 import type { Channel, Score, LeadStatus } from "./types";
 
-export function ChannelIcon({
-  channel,
-  className = "h-3.5 w-3.5",
-}: {
-  channel: Channel;
-  className?: string;
-}) {
+export function ChannelIcon({ channel, className = "h-3.5 w-3.5" }: { channel: Channel; className?: string }) {
   switch (channel) {
     case "telegram":
       return <Send className={className} aria-label="Telegram" />;
@@ -48,25 +42,16 @@ const STAGE_STYLES: Partial<Record<LeadStatus, string>> = {
   "Info Received": "bg-violet-50 text-violet-800 border-violet-200",
   "AI Qualified": "bg-moss-100 text-moss-800 border-moss-300",
   "Ready to Schedule": "bg-moss-200/70 text-moss-900 border-moss-400",
-  "Scheduled": "bg-emerald-100 text-emerald-900 border-emerald-300",
+  Scheduled: "bg-emerald-100 text-emerald-900 border-emerald-300",
   "Work Order Created": "bg-emerald-600 text-emerald-50 border-emerald-700",
   "Needs Human Review": "bg-amber-100 text-amber-900 border-amber-400",
   "Not a Fit": "bg-stone-100 text-stone-600 border-stone-300",
   "Lost / No Response": "bg-stone-100 text-stone-500 border-stone-200",
 };
 
-export function StageBadge({
-  stage,
-  size = "sm",
-}: {
-  stage: LeadStatus;
-  size?: "xs" | "sm";
-}) {
+export function StageBadge({ stage, size = "sm" }: { stage: LeadStatus; size?: "xs" | "sm" }) {
   const cls = STAGE_STYLES[stage] ?? "bg-stone-100 text-stone-700 border-stone-200";
-  const sz =
-    size === "xs"
-      ? "h-5 px-1.5 text-[10px]"
-      : "h-6 px-2.5 text-[11px]";
+  const sz = size === "xs" ? "h-5 px-1.5 text-[10px]" : "h-6 px-2.5 text-[11px]";
   return (
     <span
       className={`inline-flex items-center justify-center rounded-full border ${sz} font-medium tracking-wide ${cls} whitespace-nowrap`}

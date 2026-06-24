@@ -1,4 +1,4 @@
-// Stripe checkout (TEST MODE ONLY) for the Go Green web funnel.
+// Stripe checkout for the Go Green web funnel (test-mode by default; live gated by STRIPE_LIVE_OK=1).
 //
 // BUILD-DECISIONS §A3 charge shape:
 //   Monthly Stripe subscription, first month charged now to lock the booking.
@@ -7,25 +7,17 @@
 // What this module owns:
 //   - createSubscriptionCheckout: build a Stripe Checkout Session (mode:"subscription")
 //     with the recurring monthly line + any FIXED add-ons as one-time first-invoice items.
-//   - confirmPayment: read back a Checkout Session to confirm it succeeded.
-//   - handleStripeWebhook: idempotent reducer for checkout.session.completed → marks
+//   - handleStripeEvent: idempotent reducer for checkout.session.completed → marks
 //     the lead paid via upsertLead. Open-ended add-ons are NEVER charged here (defense
 //     in depth — the funnel's selection gate is the primary line of defense).
 //
 // Hard invariants:
-//   - STRIPE_SECRET_KEY must start with "sk_test_". Live keys are refused at boot.
+//   - STRIPE_SECRET_KEY is sk_test_ by default; a live key (sk_live_) requires STRIPE_LIVE_OK=1.
 //   - Open-ended add-ons in the selection set throw before any Stripe call.
 //   - Webhook is idempotent on (lead_id, "stripe.checkout.completed", sessionId).
 
 import Stripe from "stripe";
-import {
-  PRICE_BOOK,
-  FREQUENCY_MULTIPLIER,
-  addOnById,
-  type Tier,
-  type Frequency,
-  type CheckoutResult,
-} from "./contract";
+import { PRICE_BOOK, FREQUENCY_MULTIPLIER, addOnById, type Tier, type Frequency } from "./contract";
 import { upsertLead, actionSeen, getLead } from "./store";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,18 +29,14 @@ let liveModePrinted = false;
 export function getStripeClient(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
-    throw new Error(
-      "STRIPE_SECRET_KEY is not set. This build uses Stripe TEST mode only (sk_test_…).",
-    );
+    throw new Error("STRIPE_SECRET_KEY is not set. This build uses Stripe TEST mode only (sk_test_…).");
   }
   if (key.startsWith("sk_test_")) {
     return new Stripe(key);
   }
   if (key.startsWith("sk_live_")) {
     if (process.env.STRIPE_LIVE_OK !== "1") {
-      throw new Error(
-        "STRIPE_SECRET_KEY is a LIVE key (sk_live_…). Set STRIPE_LIVE_OK=1 to enable live mode.",
-      );
+      throw new Error("STRIPE_SECRET_KEY is a LIVE key (sk_live_…). Set STRIPE_LIVE_OK=1 to enable live mode.");
     }
     if (!liveModePrinted) {
       console.warn("[stripe] LIVE MODE active — real charges enabled");
@@ -56,9 +44,7 @@ export function getStripeClient(): Stripe {
     }
     return new Stripe(key);
   }
-  throw new Error(
-    "STRIPE_SECRET_KEY must start with sk_test_ or sk_live_.",
-  );
+  throw new Error("STRIPE_SECRET_KEY must start with sk_test_ or sk_live_.");
 }
 
 // Cents-precision conversion. Avoid binary-float drift on round dollar values.
@@ -79,13 +65,9 @@ export function recurringUnitAmountCents(input: {
   tier?: Tier;
   frequency: Frequency;
 }): number {
-  const perVisit =
-    input.measuredPerVisit ??
-    (input.tier !== undefined ? PRICE_BOOK[input.tier].perVisit : undefined);
+  const perVisit = input.measuredPerVisit ?? (input.tier !== undefined ? PRICE_BOOK[input.tier].perVisit : undefined);
   if (perVisit === undefined) {
-    throw new Error(
-      "recurringUnitAmountCents: requires measuredPerVisit or tier",
-    );
+    throw new Error("recurringUnitAmountCents: requires measuredPerVisit or tier");
   }
   return toCents(perVisit * FREQUENCY_MULTIPLIER[input.frequency]);
 }
@@ -122,9 +104,7 @@ export interface CreateCheckoutOutput {
   sessionId: string;
 }
 
-export async function createSubscriptionCheckout(
-  input: CreateCheckoutInput,
-): Promise<CreateCheckoutOutput> {
+export async function createSubscriptionCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutOutput> {
   // ── Validation (deterministic gates — BEFORE any Stripe call) ──────────────
   if (!PRICE_BOOK[input.tier]) {
     throw new Error(`Unknown tier: ${input.tier}`);
@@ -142,11 +122,11 @@ export async function createSubscriptionCheckout(
   // Defense in depth: open-ended add-ons MUST NOT reach Stripe.
   // (The funnel's selection UI is the primary gate; this is the failsafe.)
   const resolved = input.selectedAddOnIds.map((id) => {
-    const a = addOnById(id);
-    if (!a) throw new Error(`Unknown add-on id: ${id}`);
-    return a;
+    const addOn = addOnById(id);
+    if (!addOn) throw new Error(`Unknown add-on id: ${id}`);
+    return addOn;
   });
-  const openEnded = resolved.filter((a) => a.kind === "open_ended");
+  const openEnded = resolved.filter((addOn) => addOn.kind === "open_ended");
   if (openEnded.length > 0) {
     throw new Error(
       `Open-ended add-ons cannot be auto-charged (BUILD-DECISIONS §B1): ${openEnded
@@ -193,8 +173,8 @@ export async function createSubscriptionCheckout(
   }));
 
   const successUrl =
-    input.successUrl ?? "http://localhost:3000/funnel/success?session_id={CHECKOUT_SESSION_ID}";
-  const cancelUrl = input.cancelUrl ?? "http://localhost:3000/funnel/cancel";
+    input.successUrl ?? "http://localhost:3000/agent?checkout=success&session_id={CHECKOUT_SESSION_ID}";
+  const cancelUrl = input.cancelUrl ?? "http://localhost:3000/agent?checkout=cancelled";
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -224,42 +204,6 @@ export async function createSubscriptionCheckout(
     throw new Error("Stripe did not return a Checkout URL.");
   }
   return { url: session.url, sessionId: session.id };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// confirmPayment — read-back, used by success_url handler or polling
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function confirmPayment(sessionId: string): Promise<CheckoutResult> {
-  const stripe = getStripeClient();
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-  // payment_status "paid" + status "complete" is the success shape.
-  if (session.status === "complete" && session.payment_status === "paid") {
-    const amountTotalCents = session.amount_total ?? 0;
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription?.id;
-    return {
-      status: "succeeded",
-      stripeSubscriptionId: subscriptionId,
-      amountCharged: amountTotalCents / 100,
-      currency: "USD",
-      firstVisitGuaranteeActive: true,
-    };
-  }
-
-  if (session.status === "expired") {
-    return { status: "failed", failureReason: "Checkout session expired." };
-  }
-  if (session.payment_status === "unpaid") {
-    return { status: "pending" };
-  }
-  return {
-    status: "failed",
-    failureReason: `Unexpected session state: status=${session.status} payment_status=${session.payment_status}`,
-  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,15 +252,15 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebh
   }
 
   const existing = await getLead(leadId);
-  const subscriptionId =
-    typeof session.subscription === "string"
-      ? session.subscription
-      : session.subscription?.id;
+  const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
 
   await upsertLead({
     lead_id: leadId,
     channel: existing?.channel ?? "form",
     status: "Ready to Schedule",
+    // Proof of an ACTUAL charge — confirm_booking gates on this, not on the status
+    // string alone (operator.ts / hitl.ts also set "Ready to Schedule" w/o a charge).
+    paid_at: new Date().toISOString(),
     internal_notes: [
       existing?.internal_notes,
       `Stripe checkout paid: session=${session.id} sub=${subscriptionId ?? "?"} amount_total=${session.amount_total ?? 0}`,

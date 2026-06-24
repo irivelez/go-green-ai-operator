@@ -36,13 +36,17 @@ export interface OverrideBody {
 // or corrected_value blows up lead.events into an OOM. Tenant isolation is
 // still the documented KNOWN GAP (AGENTS.md §1); the input cap is the
 // stopgap that makes the gap survivable.
+// Bounded-input caps (the OOM stopgap described above). REASON_CODE_MAX is applied
+// to the same field in both schemas below — keep them sharing this one constant.
+const REASON_CODE_MAX = 200;
+const CORRECTED_VALUE_MAX = 2000;
 const correctedValueSchema = z
-  .union([z.string().max(2000), z.number(), z.boolean(), z.null()])
+  .union([z.string().max(CORRECTED_VALUE_MAX), z.number(), z.boolean(), z.null()])
   .optional();
 
 export const OwnerActionSchema = z
   .object({
-    reason_code: z.string().max(200).optional(),
+    reason_code: z.string().max(REASON_CODE_MAX).optional(),
     corrected_value: correctedValueSchema,
   })
   .strict();
@@ -50,7 +54,7 @@ export const OwnerActionSchema = z
 export const OverrideSchema = z
   .object({
     field: z.enum(["area", "slope", "address", "price", "decision"]),
-    reason_code: z.string().max(200),
+    reason_code: z.string().max(REASON_CODE_MAX),
     corrected_value: correctedValueSchema,
   })
   .strict();
@@ -108,10 +112,11 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
     const slot = nextSlots()[0]!;
     const booked = await tool_book_evaluation({ ...lead, address: lead.address }, slot);
     if (booked.ok) {
-      const wo = await tool_create_work_order(id);
-      const updated = "lead_id" in wo ? (wo as Lead) : lead;
+      const workOrder = await tool_create_work_order(id);
+      const updated = "lead_id" in workOrder ? (workOrder as Lead) : lead;
       const after = await upsertLead({
-        lead_id: id, channel: updated.channel,
+        lead_id: id,
+        channel: updated.channel,
         internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — booked.`,
       });
       return { ok: true, lead: after };
@@ -119,7 +124,8 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
   }
 
   const updated = await upsertLead({
-    lead_id: id, channel: lead.channel,
+    lead_id: id,
+    channel: lead.channel,
     status: "Ready to Schedule",
     internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — agent resumes.`,
   });
@@ -141,7 +147,8 @@ export async function handleReject(id: string, body: OwnerActionBody): Promise<H
   });
 
   const updated = await upsertLead({
-    lead_id: id, channel: lead.channel,
+    lead_id: id,
+    channel: lead.channel,
     status: "Not a Fit",
     internal_notes: `${lead.internal_notes ?? ""}\n[human] declined ${new Date().toISOString()}.`,
   });

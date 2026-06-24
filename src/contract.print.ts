@@ -37,9 +37,7 @@ const tiers = ["essential", "signature", "estate"] as const;
 const freqs = ["weekly", "biweekly", "monthly"] as const;
 console.log(`  ${pad("", 14)}${freqs.map((f) => pad(f, 14)).join("")}`);
 for (const tier of tiers) {
-  const row = freqs
-    .map((f) => pad(`$${monthlyFromVisit(tier, f).toFixed(2)}`, 14))
-    .join("");
+  const row = freqs.map((f) => pad(`$${monthlyFromVisit(tier, f).toFixed(2)}`, 14)).join("");
   console.log(`  ${pad(tier, 14)}${row}`);
 }
 

@@ -4,7 +4,8 @@
 import { priceCart } from "./pricing";
 import { monthlyFromVisit } from "./contract";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
@@ -25,7 +26,10 @@ console.log("\n=== Scenario 1: HAPPY signature/biweekly + fertilization + mulch-
   ok("recurringMonthly == monthlyRecurring", r.recurringMonthly === r.monthlyRecurring);
   ok("2 fixed line items", r.fixedAddOnLineItems.length === 2, `got ${r.fixedAddOnLineItems.length}`);
   const ids = r.fixedAddOnLineItems.map((x) => x.addOnId).sort();
-  ok("contains fertilization+mulch-refresh", JSON.stringify(ids) === JSON.stringify(["fertilization", "mulch-refresh"]));
+  ok(
+    "contains fertilization+mulch-refresh",
+    JSON.stringify(ids) === JSON.stringify(["fertilization", "mulch-refresh"]),
+  );
   const sumFixed = r.fixedAddOnLineItems.reduce((s, x) => s + x.amount, 0);
   ok("fixed sum = 445 ($95 + $350)", sumFixed === 445, `got ${sumFixed}`);
   ok("firstChargeTotal = 1093.83", approxEq(r.firstChargeTotal, 1093.83), `got ${r.firstChargeTotal}`);
@@ -41,16 +45,33 @@ console.log("\n=== Scenario 2: EDGE — open-ended excluded from charge ===");
     frequency: "biweekly",
     addOnIds: ["hand-weeding", "irrigation-repair", "leaf-removal"],
   });
-  ok("1 fixed line item only (leaf-removal)", r.fixedAddOnLineItems.length === 1, `got ${r.fixedAddOnLineItems.length}`);
+  ok(
+    "1 fixed line item only (leaf-removal)",
+    r.fixedAddOnLineItems.length === 1,
+    `got ${r.fixedAddOnLineItems.length}`,
+  );
   ok("fixed item is leaf-removal", r.fixedAddOnLineItems[0]?.addOnId === "leaf-removal");
   ok("fixed amount $199", r.fixedAddOnLineItems[0]?.amount === 199);
   ok("2 openEnded flagged", r.openEndedFlagged.length === 2, `got ${r.openEndedFlagged.length}`);
   const flaggedIds = r.openEndedFlagged.map((x) => x.addOnId).sort();
-  ok("flagged = hand-weeding + irrigation-repair", JSON.stringify(flaggedIds) === JSON.stringify(["hand-weeding", "irrigation-repair"]));
-  ok("all flagged have a reason", r.openEndedFlagged.every((x) => typeof x.reason === "string" && x.reason.length > 0));
+  ok(
+    "flagged = hand-weeding + irrigation-repair",
+    JSON.stringify(flaggedIds) === JSON.stringify(["hand-weeding", "irrigation-repair"]),
+  );
+  ok(
+    "all flagged have a reason",
+    r.openEndedFlagged.every((x) => typeof x.reason === "string" && x.reason.length > 0),
+  );
   const expected = monthlyFromVisit("signature", "biweekly") + 199;
-  ok(`firstChargeTotal = monthly + 199 (open-ended NOT charged) = ${expected}`, approxEq(r.firstChargeTotal, expected), `got ${r.firstChargeTotal}`);
-  ok("assumptions mention human-estimate note", r.assumptions.some((a) => /human estimate|not charged/i.test(a)));
+  ok(
+    `firstChargeTotal = monthly + 199 (open-ended NOT charged) = ${expected}`,
+    approxEq(r.firstChargeTotal, expected),
+    `got ${r.firstChargeTotal}`,
+  );
+  ok(
+    "assumptions mention human-estimate note",
+    r.assumptions.some((a) => /human estimate|not charged/i.test(a)),
+  );
 }
 
 console.log("\n=== Scenario 3: EDGE — unknown add-on id throws ===");
@@ -73,9 +94,11 @@ console.log("\n=== Scenario 4: HAPPY essential/weekly, no add-ons ===");
   const r = priceCart({ tier: "essential", frequency: "weekly", addOnIds: [] });
   ok("perVisit = 199", r.perVisit === 199);
   ok("monthlyRecurring = 861.67", approxEq(r.monthlyRecurring, 861.67), `got ${r.monthlyRecurring}`);
-  ok("firstChargeTotal == monthlyRecurring == 861.67",
+  ok(
+    "firstChargeTotal == monthlyRecurring == 861.67",
     approxEq(r.firstChargeTotal, 861.67) && r.firstChargeTotal === r.monthlyRecurring,
-    `got ${r.firstChargeTotal}`);
+    `got ${r.firstChargeTotal}`,
+  );
   ok("no fixed line items", r.fixedAddOnLineItems.length === 0);
   ok("no open-ended flagged", r.openEndedFlagged.length === 0);
 }

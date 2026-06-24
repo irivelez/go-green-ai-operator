@@ -42,9 +42,9 @@ export interface PriceRange {
 // SF residential lot sizes (small <1500 sqft, medium 1500–4000, large >4000).
 // Old biweekly anchors: small [95,115] → 105; medium [155,190] → 173; large [290,370] → 330.
 // TODO(spec §A.10): owner sign-off on rate card v2
-const AREA_BUCKET_SMALL = 105;  // < 1500 sqft
+const AREA_BUCKET_SMALL = 105; // < 1500 sqft
 const AREA_BUCKET_MEDIUM = 173; // 1500 – 4000 sqft (midpoint 172.5 rounded up)
-const AREA_BUCKET_LARGE = 330;  // > 4000 sqft
+const AREA_BUCKET_LARGE = 330; // > 4000 sqft
 
 // §A.4 — slope surcharge multiplier applied to the area-bucket base.
 // TODO(spec §A.10): owner sign-off on rate card v2
@@ -74,11 +74,12 @@ export function yardSizeToSqft(size: YardSize): number {
  * Returns ONE exact per-visit number plus the monthly equivalent at the chosen
  * frequency. Final price is still confirmed on the first on-site visit (§9.1).
  */
-export function pricePerVisit(input: {
-  measured_area_sqft: number;
-  slope_tier: SlopeTier;
-  frequency: Frequency;
-}): { perVisit: number; monthly: number; assumptions: string[]; currency: "USD" } {
+export function pricePerVisit(input: { measured_area_sqft: number; slope_tier: SlopeTier; frequency: Frequency }): {
+  perVisit: number;
+  monthly: number;
+  assumptions: string[];
+  currency: "USD";
+} {
   if (!(input.measured_area_sqft > 0)) {
     throw new Error("measured_area_sqft required and > 0");
   }
@@ -107,16 +108,16 @@ export function pricePerVisit(input: {
  * is now a separately quoted add-on through priceCart, not folded into the band.
  */
 export function quoteRange(c: PricingCase): PriceRange {
-  const r = pricePerVisit({
+  const priced = pricePerVisit({
     measured_area_sqft: c.measured_area_sqft,
     slope_tier: c.slope_tier,
     frequency: c.frequency,
   });
   return {
-    low: r.perVisit,
-    high: r.perVisit,
-    currency: r.currency,
-    assumptions: r.assumptions,
+    low: priced.perVisit,
+    high: priced.perVisit,
+    currency: priced.currency,
+    assumptions: priced.assumptions,
     confidence: 0.85,
     covered: true,
   };
@@ -125,11 +126,7 @@ export function quoteRange(c: PricingCase): PriceRange {
 // Cart pricing — pure (tier, frequency, add-ons) → PricingResult.
 // Authority: BUILD-DECISIONS §A3 (subscription math), §3 (add-on classification).
 
-export function priceCart(input: {
-  tier: CartTier;
-  frequency: CartFrequency;
-  addOnIds: string[];
-}): PricingResult {
+export function priceCart(input: { tier: CartTier; frequency: CartFrequency; addOnIds: string[] }): PricingResult {
   const { tier, frequency, addOnIds } = input;
 
   const perVisit = PRICE_BOOK[tier].perVisit;

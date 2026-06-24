@@ -10,7 +10,7 @@
 // toDataStreamResponse() → consumed by useChat() on the client, which renders each
 // tool result as an interactive React component (generative UI).
 
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, convertToCoreMessages, type Message } from "ai";
 import { buildTools, type ToolContext } from "@/src/agent-tools";
@@ -61,10 +61,10 @@ export async function POST(req: NextRequest) {
   // is a defect, not a degraded mode — fail loudly so it's caught, never shipped dumb.
   if (!process.env.ANTHROPIC_API_KEY) {
     if (process.env.NODE_ENV === "production") {
-      return new Response(
-        JSON.stringify({ error: "ANTHROPIC_API_KEY is required in production." }),
-        { status: 503, headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is required in production." }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      });
     }
     return devFallbackStream(language);
   }
@@ -77,9 +77,7 @@ export async function POST(req: NextRequest) {
   const existing = await getLead(leadId);
   const safePhotos = photos ? photos.filter(isAllowedPhoto) : undefined;
   if (photos && safePhotos && safePhotos.length !== photos.length) {
-    console.warn(
-      `[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`,
-    );
+    console.warn(`[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`);
   }
   await upsertLead({
     lead_id: leadId,

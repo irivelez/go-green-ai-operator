@@ -91,9 +91,7 @@ export default function Page() {
               Go Green Landscape ·{" "}
               <span className="font-display italic text-moss-700/70">premium maintenance, SF Bay</span>
             </span>
-            <span className="font-mono">
-              Deltanova autonomous-ops · America/Los_Angeles
-            </span>
+            <span className="font-mono">Deltanova autonomous-ops · America/Los_Angeles</span>
           </div>
         </footer>
       </div>

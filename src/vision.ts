@@ -10,10 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import {
-  ADD_ON_CATALOG,
-  type VisionAssessment,
-} from "./contract";
+import { ADD_ON_CATALOG, type VisionAssessment } from "./contract";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model selection — env-overridable per task brief.
@@ -55,11 +52,9 @@ export const VisionAssessmentSchema = z.object({
     .array(z.string())
     .transform((ids) => Array.from(new Set(ids)))
     .pipe(
-      z
-        .array(z.string())
-        .refine((ids) => ids.every((id) => ADDON_ID_SET.has(id)), {
-          message: "detected_extras must only contain ids from ADD_ON_CATALOG",
-        }),
+      z.array(z.string()).refine((ids) => ids.every((id) => ADDON_ID_SET.has(id)), {
+        message: "detected_extras must only contain ids from ADD_ON_CATALOG",
+      }),
     ),
   recommended_tier: TierSchema,
   confidence: z.number().min(0).max(1),
@@ -71,9 +66,7 @@ export const VisionAssessmentSchema = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(): string {
-  const addonLines = ADD_ON_CATALOG.map(
-    (a) => `  - ${a.id} — ${a.name} (${a.category}, ${a.kind})`,
-  ).join("\n");
+  const addonLines = ADD_ON_CATALOG.map((a) => `  - ${a.id} — ${a.name} (${a.category}, ${a.kind})`).join("\n");
 
   return `You are the vision-assessment surface of Go Green Landscape's autonomous maintenance funnel (SF premium residential).
 

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Send,
   RefreshCw,
@@ -19,6 +12,7 @@ import {
   Camera,
   Languages,
 } from "lucide-react";
+import { newWebLeadId } from "@/src/id";
 import type { Decision, OperatorResponse } from "./types";
 import { ScoreChip, StageBadge } from "./icons";
 import { fmtRange } from "./format";
@@ -59,18 +53,7 @@ const SAMPLES: Sample[] = [
   },
 ];
 
-function genId(): string {
-  // 8-char base36 random suffix
-  const r = Math.random().toString(36).slice(2, 10);
-  const t = Date.now().toString(36).slice(-4);
-  return `web-${r}${t}`;
-}
-
-export function OperatorConsole({
-  onAfterSend,
-}: {
-  onAfterSend: () => void | Promise<void>;
-}) {
+export function OperatorConsole({ onAfterSend }: { onAfterSend: () => void | Promise<void> }) {
   const [leadId, setLeadId] = useState<string>("");
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState("");
@@ -80,7 +63,7 @@ export function OperatorConsole({
 
   // Generate a stable lead_id on mount
   useEffect(() => {
-    setLeadId(genId());
+    setLeadId(newWebLeadId());
   }, []);
 
   // Auto-scroll to bottom on new bubbles
@@ -94,7 +77,7 @@ export function OperatorConsole({
     setBubbles([]);
     setDraft("");
     setError(null);
-    setLeadId(genId());
+    setLeadId(newWebLeadId());
   }, []);
 
   const send = useCallback(
@@ -102,10 +85,7 @@ export function OperatorConsole({
       const trimmed = text.trim();
       if (!trimmed || sending) return;
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      setBubbles((prev) => [
-        ...prev,
-        { id: `u-${id}`, role: "user", text: trimmed, hasPhoto: opts?.hasPhoto },
-      ]);
+      setBubbles((prev) => [...prev, { id: `u-${id}`, role: "user", text: trimmed, hasPhoto: opts?.hasPhoto }]);
       setDraft("");
       setSending(true);
       setError(null);
@@ -153,10 +133,7 @@ export function OperatorConsole({
 
   const isEmpty = bubbles.length === 0;
 
-  const shortId = useMemo(
-    () => (leadId ? leadId.slice(-8) : "—"),
-    [leadId],
-  );
+  const shortId = useMemo(() => (leadId ? leadId.slice(-8) : "—"), [leadId]);
 
   return (
     <section className="rounded-2xl border border-moss-200 bg-white shadow-petal-lg overflow-hidden flex flex-col">
@@ -167,9 +144,7 @@ export function OperatorConsole({
             <Bot className="h-4 w-4 text-moss-50" strokeWidth={1.9} />
           </div>
           <div className="min-w-0">
-            <h2 className="font-display text-lg text-moss-50 leading-tight font-medium">
-              Operator Console
-            </h2>
+            <h2 className="font-display text-lg text-moss-50 leading-tight font-medium">Operator Console</h2>
             <p className="text-[11px] text-moss-100/75 mt-0.5 truncate">
               Talk to the agent like a real lead — actions reflect live on the board
             </p>
@@ -209,13 +184,9 @@ export function OperatorConsole({
               className="group inline-flex items-center gap-1.5 rounded-full border border-moss-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-moss-800 hover:bg-moss-50 hover:border-moss-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
               title={s.text}
             >
-              {s.flag === "es" && (
-                <Languages className="h-3 w-3 text-moss-500" strokeWidth={2} />
-              )}
+              {s.flag === "es" && <Languages className="h-3 w-3 text-moss-500" strokeWidth={2} />}
               <span>{s.label}</span>
-              {s.hasPhoto && (
-                <Camera className="h-3 w-3 text-moss-500 opacity-70" strokeWidth={2} />
-              )}
+              {s.hasPhoto && <Camera className="h-3 w-3 text-moss-500 opacity-70" strokeWidth={2} />}
             </button>
           ))}
         </div>
@@ -226,21 +197,14 @@ export function OperatorConsole({
         ref={scrollerRef}
         className="flex-1 min-h-[280px] max-h-[560px] overflow-y-auto rail bg-paper px-4 py-5 sm:px-5"
       >
-        {isEmpty && !sending && (
-          <EmptyState />
-        )}
+        {isEmpty && !sending && <EmptyState />}
 
         <div className="space-y-4">
           {bubbles.map((b) =>
             b.role === "user" ? (
               <UserBubble key={b.id} text={b.text} hasPhoto={b.hasPhoto} />
             ) : (
-              <OperatorBubble
-                key={b.id}
-                text={b.text}
-                decision={b.decision}
-                leadId={b.lead_id}
-              />
+              <OperatorBubble key={b.id} text={b.text} decision={b.decision} leadId={b.lead_id} />
             ),
           )}
           {sending && <ThinkingBubble />}
@@ -256,10 +220,7 @@ export function OperatorConsole({
       )}
 
       {/* Composer */}
-      <form
-        onSubmit={submit}
-        className="flex items-end gap-2 border-t border-moss-100 bg-white px-3 py-3 sm:px-4"
-      >
+      <form onSubmit={submit} className="flex items-end gap-2 border-t border-moss-100 bg-white px-3 py-3 sm:px-4">
         <div className="flex-1 rounded-xl border border-moss-200 bg-moss-50/40 px-3 py-2 focus-within:border-moss-400 focus-within:bg-white transition">
           <textarea
             value={draft}
@@ -281,11 +242,7 @@ export function OperatorConsole({
           disabled={sending || draft.trim().length === 0}
           className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-moss-700 px-4 text-sm font-semibold text-moss-50 transition hover:bg-moss-800 disabled:opacity-40 disabled:cursor-not-allowed shadow-petal"
         >
-          {sending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-3.5 w-3.5" strokeWidth={2.2} />
-          )}
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" strokeWidth={2.2} />}
           Send
         </button>
       </form>
@@ -301,8 +258,7 @@ function EmptyState() {
       </div>
       <h3 className="font-display text-lg text-bark-900">Operator is listening</h3>
       <p className="text-[12px] text-moss-700/65 mt-1 max-w-[32ch] leading-relaxed">
-        Send any inbound message — or tap a sample above — and watch the decision
-        trace, pipeline, and KPIs update live.
+        Send any inbound message — or tap a sample above — and watch the decision trace, pipeline, and KPIs update live.
       </p>
     </div>
   );
@@ -327,15 +283,7 @@ function UserBubble({ text, hasPhoto }: { text: string; hasPhoto?: boolean }) {
   );
 }
 
-function OperatorBubble({
-  text,
-  decision,
-  leadId,
-}: {
-  text: string;
-  decision: Decision;
-  leadId: string;
-}) {
+function OperatorBubble({ text, decision, leadId }: { text: string; decision: Decision; leadId: string }) {
   return (
     <div className="flex items-start gap-2.5 rise-in">
       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-moss-700 text-moss-50 mt-0.5 shadow-petal">
@@ -368,20 +316,12 @@ function ThinkingBubble() {
   );
 }
 
-function DecisionTrace({
-  decision,
-  leadId,
-}: {
-  decision: Decision;
-  leadId: string;
-}) {
+function DecisionTrace({ decision, leadId }: { decision: Decision; leadId: string }) {
   const range = fmtRange(decision.price_range);
   return (
     <details className="group rounded-xl border border-moss-100 bg-moss-50/50 open:bg-white open:shadow-petal transition-all">
       <summary className="cursor-pointer list-none px-3 py-2 flex items-center gap-2 flex-wrap text-[11px]">
-        <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-moss-700/70">
-          Decision
-        </span>
+        <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-moss-700/70">Decision</span>
         <span className="opacity-40">·</span>
         <span className="font-medium text-bark-900">{decision.intent}</span>
         <ScoreChip score={decision.score} />
@@ -398,9 +338,7 @@ function DecisionTrace({
             llm
           </span>
         )}
-        <span className="ml-auto text-[10px] text-moss-700/50 group-open:rotate-180 transition-transform">
-          ▾
-        </span>
+        <span className="ml-auto text-[10px] text-moss-700/50 group-open:rotate-180 transition-transform">▾</span>
       </summary>
 
       <div className="px-3 pb-3 pt-1 space-y-2.5 text-[11px] text-moss-800">
@@ -408,9 +346,7 @@ function DecisionTrace({
           <Field k="lead_id" v={<span className="font-mono">{leadId.slice(-12)}</span>} />
           <Field k="language" v={decision.language.toUpperCase()} />
           {range && <Field k="price range" v={<span className="font-medium text-moss-900">{range}</span>} />}
-          {decision.suggested_package && (
-            <Field k="package" v={decision.suggested_package} />
-          )}
+          {decision.suggested_package && <Field k="package" v={decision.suggested_package} />}
           {decision.booked_slot && (
             <Field k="booked slot" v={<span className="text-emerald-700 font-medium">{decision.booked_slot}</span>} />
           )}
@@ -436,9 +372,7 @@ function DecisionTrace({
 
         {decision.missing.length > 0 && (
           <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-amber-800/80 mb-1">
-              Missing
-            </div>
+            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-amber-800/80 mb-1">Missing</div>
             <div className="flex flex-wrap gap-1">
               {decision.missing.map((m) => (
                 <span
@@ -469,9 +403,7 @@ function DecisionTrace({
 
         {decision.trace.length > 0 && (
           <div>
-            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-moss-700/65 mb-1">
-              Trace
-            </div>
+            <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-moss-700/65 mb-1">Trace</div>
             <ol className="space-y-0.5 font-mono text-[10.5px] text-moss-800/85 leading-relaxed pl-4 list-decimal marker:text-moss-400">
               {decision.trace.map((step, i) => (
                 <li key={i}>{step}</li>
@@ -487,9 +419,7 @@ function DecisionTrace({
 function Field({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-center gap-1.5 min-w-0">
-      <span className="text-[10px] uppercase tracking-wider text-moss-700/55 font-semibold shrink-0">
-        {k}
-      </span>
+      <span className="text-[10px] uppercase tracking-wider text-moss-700/55 font-semibold shrink-0">{k}</span>
       <span className="text-[11px] truncate">{v}</span>
     </div>
   );

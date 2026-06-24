@@ -10,7 +10,8 @@ import {
   getAreaConfidenceThreshold,
 } from "./env";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;

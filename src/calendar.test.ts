@@ -4,7 +4,8 @@
 
 import { createCrewEvent, buildCrewEventPayload } from "./calendar";
 
-let pass = 0, fail = 0;
+let pass = 0,
+  fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`${cond ? "  ✅" : "  ❌"} ${name}${detail ? ` — ${detail}` : ""}`);
   cond ? pass++ : fail++;
@@ -27,8 +28,11 @@ async function main() {
   {
     const p = buildCrewEventPayload(baseInput);
     ok("summary contains tier_name", p.summary.includes("Signature Care"), p.summary);
-    ok("summary uses short address (first comma segment)",
-      p.summary.includes("742 Valencia St") && !p.summary.includes("94110"), p.summary);
+    ok(
+      "summary uses short address (first comma segment)",
+      p.summary.includes("742 Valencia St") && !p.summary.includes("94110"),
+      p.summary,
+    );
     ok("summary begins with brand prefix", p.summary.startsWith("Go Green — "), p.summary);
     ok("description contains sqft", p.description.includes("2400"), p.description);
     ok("description contains slope_tier", p.description.includes("moderate"), p.description);
@@ -54,8 +58,10 @@ async function main() {
     const { access_notes: _omit, ...rest } = baseInput;
     void _omit;
     const p = buildCrewEventPayload(rest);
-    ok("description still contains required fields without access_notes",
-      p.description.includes("2400") && p.description.includes("moderate") && p.description.includes("Signature Care"));
+    ok(
+      "description still contains required fields without access_notes",
+      p.description.includes("2400") && p.description.includes("moderate") && p.description.includes("Signature Care"),
+    );
     ok("description never includes literal 'undefined'", !p.description.includes("undefined"), p.description);
   }
 
@@ -103,4 +109,4 @@ async function main() {
   process.exit(fail === 0 ? 0 : 1);
 }
 
-main();
+void main();

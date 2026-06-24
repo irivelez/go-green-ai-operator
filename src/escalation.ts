@@ -45,11 +45,7 @@ export function checkEscalation(c: CaseState): EscalationCheck {
 }
 
 // §12.1 hard rules — deny BEFORE a tool runs. Returns null = allow, string = deny reason.
-export function hardRuleDeny(
-  tool: string,
-  input: Record<string, unknown>,
-  c: CaseState
-): string | null {
+export function hardRuleDeny(tool: string, input: Record<string, unknown>, c: CaseState): string | null {
   if (tool === "book_evaluation" && !c.address) {
     return "HARD RULE: no scheduling without a confirmed address";
   }
