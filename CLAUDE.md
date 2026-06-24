@@ -66,6 +66,12 @@ idempotent actions `(lead_id, action_hash)` · live Stripe gated behind `STRIPE_
 - `STORE_BACKEND` selects the store (`memory` default / `json` local / `kv` Upstash prod). Behavior bugs found during
   cleanup are **logged, not fixed** (`notes/registries.md` §E).
 
+## Docs are reference, not gospel
+
+`spec.md`, `AGENTS.md`, and the runbooks describe *intent* — they can lag the code. On any conflict, **the current
+source wins**: verify signatures/behavior against the file, not the doc. Behavior bugs are deliberately
+**logged-not-fixed** in `notes/registries.md` (E), so code can intentionally differ from a doc's ideal.
+
 ## Reference docs (read on demand — these do NOT auto-load)
 
 Plain links, deliberately **not** `@`-imports: a CLAUDE.md `@`-import loads the whole file into context at launch (it is
@@ -77,5 +83,6 @@ not lazy), and `spec.md` alone is ~640 lines. Open these only when a task needs 
 - [BUILD-DECISIONS.md](./BUILD-DECISIONS.md) — locked web-funnel decisions.
 - [notes/registries.md](./notes/registries.md) — frozen-boundary / intentional-duplication / known-gaps map.
 - [notes/agent-legibility-research.md](./notes/agent-legibility-research.md) — why these are links, not `@`-imports.
+- [docs/](./docs/) — **runbooks**: worked, code-grounded edit guides, e.g. [add a funnel step](./docs/runbooks/add-a-funnel-step.md).
 
 When editing under `src/` or `app/`, a nested `CLAUDE.md` there adds area-specific rules (those *do* load on demand).

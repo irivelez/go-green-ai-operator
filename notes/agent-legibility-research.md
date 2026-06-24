@@ -57,6 +57,28 @@ claims, 25 adversarially verified — 21 confirmed, 4 refuted). Claims tagged **
 - "Subfolder CLAUDE.md files are completely ignored even when working in them" (#3529) — REFUTED (1-2); a client
   regression, not the documented design.
 
+## Follow-up research (2026-06-23): docs/ content for EDIT success
+
+A third pass (19 sources, 25 verified) on writing a `docs/` folder + linking CLAUDE.md for agent *edit* success —
+contrarian, well-supported:
+- **[STUDY] More docs ≠ better edits.** Hand-written context files give **+4% avg — ZERO for Claude Code** — LLM-generated
+  ones **hurt (−3%)**, and all add **20%+ inference cost** (arXiv 2602.11988, ETH Zurich). Harm mechanism =
+  **over-specification**; broad architecture prose is the least valuable content. Context files help most in
+  *poorly-documented* repos (this repo is already well-documented → low marginal value).
+- **[STUDY] Worked examples > prose / parameter lists.** Deleting example code from docs dropped pass rates 0.66–0.82 →
+  0.22–0.39 (arXiv 2503.15231); relevant retrieved docs lift codegen 83–220% for *unfamiliar* libraries (CodeRAG-Bench
+  2406.14497) — but **noisy/irrelevant/stale docs degrade below the no-doc baseline**, so accuracy + relevance > quantity.
+- **[STUDY] Stale docs are the dominant failure, and docs don't fully fix it.** LLMs persist with outdated API patterns
+  even with update specs in context (executable rate 43%→66% — "necessary but not sufficient", arXiv 2604.09515) → agents
+  must treat docs as possibly-stale and **prefer current source**.
+- **Refuted (don't repeat):** "context files reduce success" (0-3); AGENTS.md ~28% runtime win (1-2); front-loading
+  architecture reduces navigation (0-3).
+
+**Decision (applied):** add ONE worked-example runbook (`docs/runbooks/add-a-funnel-step.md`) + a **stale-doc protocol**
+in CLAUDE.md ("source wins on conflict"). **NO `docs/` relocation** of existing root docs (organizational only, high
+churn, breaks cross-refs), **NO architecture-overview docs**, no auto-generated docs, no RAG-over-docs (refuted /
+net-negative). New sources: arXiv 2602.11988, 2503.15231, 2406.14497, 2604.09515, 2511.12884, 2604.03826, 2507.11538.
+
 ## Sources
 Official: <https://code.claude.com/docs/en/memory> · <https://nextjs.org/docs/app/getting-started/project-structure> ·
 <https://nextjs.org/docs/app/guides/ai-agents>. Studies: <https://research.trychroma.com/context-rot> ·

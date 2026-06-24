@@ -4,7 +4,7 @@ A thin deterministic surface over `src/`. The chat is LLM-driven, but numbers an
 
 - **Generative-UI dispatch.** Each tool result renders a card via `renderTool` in `agent/components/GenerativeChat.tsx`.
   Adding a funnel step = a `run*` handler/tool in `src/agent-tools.ts` + a card in `agent/components/cards.tsx` + a
-  matching `case` in the `renderTool` switch.
+  matching `case` in the `renderTool` switch. **Worked example: `../docs/runbooks/add-a-funnel-step.md`.**
 - **The model never sees the polygon or the charge.** The drawn area is POSTed to `api/funnel/confirm-area` (server
   re-derives sqft via `computePolygonSqft`); the Stripe URL is built server-side by `propose_checkout`. On-screen sqft is
   display-only — never price off a client number.
