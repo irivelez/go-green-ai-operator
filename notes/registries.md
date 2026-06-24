@@ -73,6 +73,7 @@ contract:
 | Override allow-list | `OVERRIDE_FIELDS` (`hitl.ts`) ↔ leads/override route enum ↔ `REASON_CODES` (`ReviewInbox.tsx`) | Spans server↔client boundary; DRY only within one side, not across. |
 | EN/ES dictionaries | `lib/i18n/en.ts` ↔ `lib/i18n/es.ts` | Parallel-by-design translation pair. |
 | Add-on `kind` filters | `agent-tools.ts` keeps `'fixed'` ↔ `stripe.ts` blocks `'open_ended'` | Opposite predicates over the same catalog — complementary, not duplicate. |
+| `channel ?? "form"` default | `store`-layer callers in `agent-tools.ts` (×8), `stripe.ts:281`, `app/api/funnel/agent/route.ts:86`, `app/api/operator/route.ts:26` | Phase-3 finding: a 1-line default spread across module boundaries; the agent-tools ×8 are incidental (7/8 also read `existing` for other fields). NOT a safe within-boundary merge — leave inline. |
 
 ## (C) DEAD-CODE candidates — verify against the oracle INCLUDING `src/*.test.ts` (Phases 1, 4)
 
