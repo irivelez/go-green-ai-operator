@@ -12,6 +12,19 @@
 
 **Status:** authoritative for the current build · **Supersedes:** v1 §0, §3.2 staging, §6 state machine endpoint, §9.1 size model, §12.1 on-site-review rule (for measurable standard lots) · **Carries over:** everything else in v1 + the Engineering Constitution in `AGENTS.md`.
 
+### A.0-platform — V1 reliability platform (current build, supersedes earlier reliability notes)
+
+**Status:** LOCKED (V1). The funnel in §A.1 now rides a reliability platform. Declarative current truth:
+
+- **Atomic store.** Leads are per-field Redis Hashes (`HSET` per field); `_actions` is a Set; events live in a separate List `events:{leadId}` with a `lastEventTs` pointer on the lead. Concurrent distinct-field writers (e.g. a Stripe `paid` flip + a chat `confirmed_sqft` write) never collide. Slot ledger is an Upstash Hash with an atomic `HSETNX` claim (no double-book). **Lead status enum is the canonical 7-value set** `ACTIVE | PAUSED | ESCALATED | PAID | BOOKED | ABANDONED | DEAD` (only the Stripe webhook writes `PAID`).
+- **Owner auth.** `middleware.ts` (Edge, Web Crypto HMAC cookie) gates the dashboard, `/api/leads/*`, all HITL routes, and `/api/operator`. Public: `/agent`, `/funnel`, `/api/funnel/*`, Stripe + Telegram webhooks, `/api/cron/*` (CRON_SECRET bearer).
+- **Spend + abuse caps.** Per-customer-email atomic-INCR meters (model steps, $/day, re-engagement emails) + a separate photo count/byte cap, all escalate-on-breach; IP + global rate limits on the agent route.
+- **Durable jobs.** Upstash ZSET queue + secured Vercel Cron drainer (Lua atomic claim, reclaim sweep, per-handler dedup, visibility timeout, DLQ; cron-overlap Lua lock). Drives appointment reminders (day-before / morning-of), abandoned re-engagement (+1h/+24h/+72h reusing the staged Checkout URL), owner escalation push (Telegram + email, dedup/retry), an escalation-timeout "waiting on owner" sweep, the daily cost alarm, and a one-way daily GCal export (read-only mirror; local ledger stays source of truth).
+- **Returning-customer recognition (confirm-first).** Email match → "Welcome back — same location as last time?" with the stored address revealed ONLY after the customer affirms; same-garden skips address/measure and reuses stored sqft/slope; a different address overwrites (flat Customer model).
+- **Recurring spine.** A booked first service creates a `Job` + first `Visit` (flat Customer model). Three Stripe subscription webhooks reduce idempotently: `checkout.session.completed` (lead→PAID), `invoice.payment_failed` (Job→past_due + owner escalation), `customer.subscription.deleted` (Job→canceled). Next-visit creation is idempotent per `(job, period)`.
+- **Deferred to V1.1:** magic links, `Property` entity, Meta CAPI (client Pixel only), full subscription lifecycle beyond the 3 webhooks, Customers/Pipeline/Revenue cockpit views, bidirectional Google Calendar, Google Places autocomplete.
+- **Live gates OFF by default.** `STRIPE_LIVE_OK` + `CREW_CALENDAR_ENABLED` ship disabled; flipped only at the owner-signed pre-flight (rate card + live keys + calendar id).
+
 ### A.0 The pitch (v2)
 
 > A Meta-ad lead who wants their yard maintained lands in a chat, and the agent **measures their property from the address, prices it exactly, collects the first month by card, and books the first service onto the crew's calendar — autonomously, end to end.** Humans touch only the fraction the agent flags, and every human touch is captured as a labeled correction that tunes the system to flag less next time.

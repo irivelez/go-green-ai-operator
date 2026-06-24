@@ -1,8 +1,10 @@
 # Go Green AI Operator
 
-Autonomous maintenance funnel for premium SF landscaping. Telegram intake → vision-qualifies the yard → range-prices → books. Human-in-the-loop only when the spec says so.
+Autonomous ad→pay→book maintenance funnel for premium SF landscaping. A Meta-ad lead lands in a chat (`/agent`), confirms address + yard area, gets a deterministic exact price, pays via Stripe Checkout, and books a crew slot — autonomously, with human-in-the-loop only on flagged edge cases.
 
 **Built for [BuilderShip Yacht Hackathon](https://luma.com/ship.builders) — Deltanova design-partner build with [Go Green Landscape](https://gogreenlandscape.com).**
+
+> **V1 platform status (current build).** Reliability-first: per-field-atomic Redis Hash store, owner auth (HMAC cookie + Edge `middleware.ts`), email-keyed spend caps + IP/global rate limits, a durable Upstash ZSET job queue drained by secured Vercel Cron (reminders, re-engagement, escalation push, daily GCal export), returning-customer recognition (confirm-first, email-match), and a Job/Visit recurring spine with 3 Stripe subscription webhooks. The LLM never writes final area/price/payment/booking state — deterministic services do. Stack stays Vercel AI SDK v4. `spec.md §A` is authoritative; deferred to V1.1: magic links, `Property` entity, Meta CAPI, full subscription lifecycle, extra cockpit views, bidirectional GCal, Places autocomplete. The sections below are V1-hackathon historical context.
 
 ## Two surfaces (one shared brain)
 
