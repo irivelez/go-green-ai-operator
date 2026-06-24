@@ -44,7 +44,7 @@ gate names the full path set explicitly (recon Step 1).
 | 3 | DRY (within a system) | done | | **Empty surface** (valid). Examined: agent-tools `channel ?? "form"` ×8 — incidental, 7/8 also read `existing` for other fields → over-reach to merge; `channel ?? "form"` default spans store/stripe/routes → cross-boundary; two `vision_assessment ?? {}` casts target different types; route parsing not a uniform idiom. No safe within-boundary merge. Notes-only commit. |
 | 4 | Dead code, 2nd pass | done | | 1 orphan: `type CheckoutResult` import in stripe.ts — orphaned by Phase-1 `confirmPayment` removal (`createSubscriptionCheckout` returns `{url,sessionId}`, not `CheckoutResult`). Type def kept (still used at contract.ts:512). Gate green. |
 | 5 | Identify variables | done | | notes/renames.md — 9 candidates (V1-V9), all function-local; idiomatic shorts (i/j, sw/ne, regex m, date d/s, seed t) left |
-| 6 | Propose variable names | pending | | notes-only |
+| 6 | Propose variable names | done | | notes/renames.md Phase 6 — all 9 approved; collision/misdirection/boundary cleared (`priced` string-literals & `contact` prompt-string are not identifiers) |
 | 7 | Apply variable renames | pending | | trifecta |
 | 8 | Identify functions/params | pending | | notes-only |
 | 9 | Propose function names | pending | | notes-only |

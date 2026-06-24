@@ -24,3 +24,23 @@ Codebase is well-named; this is a short, high-confidence list. Idiomatic short n
 
 All are private function-local bindings — none are serialized/boundary keys (registry A). The values they hold get
 assigned to frozen fields (`per_visit_price`, etc.) but the local *name* is free.
+
+## Phase 6 — variable PROPOSE + critic verdict (the review gate)
+
+`current → proposed`, each checked for collision / misdirection / boundary. **All 9 APPROVED.**
+
+| # | rename | collision check | over-reach note for Phase 7 |
+|---|---|---|---|
+| V1 | `l → lead` (store.ts:124) | no `lead` in `getLead` scope (the 45 file-wide `lead` are other methods/the `Lead` type) | change only :123-124 |
+| V2 | `cc → contact` (agent.ts:447) | the only lowercase `contact` is a prompt string at :212 (different scope) | change only :447-448; leave the :212 string |
+| V3 | `a → addOn` (stripe.ts:143,147) | no existing `addOn` identifier (`addOnById` doesn't match) | **two separate arrow scopes** — rename both `a`s, scope-aware, NOT a blanket s/a/ |
+| V4 | `c → cleanup` (funnel-prompt.ts:96) | no `cleanup` identifier; the word "cleanup" only appears in string add-on ids/prose | change only the `c`/`c.x` tokens; leave string prose |
+| V5 | `wo → workOrder` (hitl.ts:115) | no existing `workOrder` | change only :115-116 |
+| V6 | `t → tierSpec` (agent.ts:346) | 0 existing `tierSpec`; avoids the i18n-`t` clash | scope-local |
+| V7 | `t → tierSpec` (funnel-prompt.ts:36) | 0 existing `tierSpec` | scope-local |
+| V8 | `r → priced` (agent-tools.ts:643) | the 3 file `priced` are 2 string-literal `status:"priced"` + 1 comment — NOT identifiers; coherent | change `r`/`r.perVisit`/`r.monthly` in `runComputeExactPrice` only |
+| V9 | `r → priced` (pricing.ts:110) | 0 existing `priced` | scope-local |
+
+Critic note: the rename set is deliberately small + scope-local (smallest blast radius). The Phase-7 trifecta
+(no-misdirection grep on the old token, over-reach grep on must-stay siblings, gate + symmetric diff) is the
+verification; a separate critic sub-agent is disproportionate for 9 single-function locals under a strict typechecker.
