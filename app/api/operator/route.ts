@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { runOperator } from "@/src/operator";
+import { isAuthorizedOwnerRequest } from "@/src/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  if (!(await isAuthorizedOwnerRequest(req.headers.get("cookie")))) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
   const json = await req.json().catch(() => null);
   const parsed = Body.safeParse(json);
   if (!parsed.success) {

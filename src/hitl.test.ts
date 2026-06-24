@@ -4,7 +4,8 @@
 // Run: npx tsx src/hitl.test.ts
 
 import { upsertLead, resetStore, listEvents, getLead, type Lead } from "./store";
-import { handleApprove, handleReject, handleOverride, OwnerActionSchema, OverrideSchema } from "./hitl";
+import { handleApprove, handleReject, handleOverride, resolveEscalation, sweepEscalations, OwnerActionSchema, OverrideSchema } from "./hitl";
+import { resetEvents } from "./events";
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => {
@@ -20,7 +21,7 @@ const seedReviewLead = (lead_id: string): Promise<Lead> =>
     slope_tier: "flat", lead_score: "B",
     ai_recommendation: "Biweekly Signature.",
     price_range: { low: 155, high: 190 },
-    status: "Needs Human Review", escalation_reason: "low confidence",
+    status: "ESCALATED", escalation_reason: "low confidence",
   });
 
 async function main() {
@@ -43,9 +44,9 @@ console.log("\n=== handleApprove: structured event + status flip preserved ===")
   ok("agent_decision captured", e?.agent_decision !== undefined);
   ok("inputs captured", e?.inputs !== undefined);
 
-  // status flip preserved (per existing approve route): Needs Human Review → Ready to Schedule
+  // status flip preserved (per existing approve route): ESCALATED → ACTIVE
   const lead = (await getLead("L_O1"));
-  ok("status flipped to Ready to Schedule", lead?.status === "Ready to Schedule",
+  ok("status flipped to ACTIVE", lead?.status === "ACTIVE",
     `got ${lead?.status}`);
 }
 
@@ -78,7 +79,7 @@ console.log("\n=== handleReject: structured event + status flip preserved ===");
   ok("event corrected_value preserved", e?.corrected_value === "out of area");
 
   const lead = (await getLead("L_O2"));
-  ok("status flipped to Not a Fit", lead?.status === "Not a Fit", `got ${lead?.status}`);
+  ok("status flipped to DEAD", lead?.status === "DEAD", `got ${lead?.status}`);
 }
 
 console.log("\n=== handleOverride: pure correction, NO status change ===");
@@ -189,6 +190,53 @@ console.log("\n=== SEC-B: OverrideSchema — same bounds + required field/reason
     field: "price", reason_code: "x", corrected_value: { low: 1, high: 2 },
   });
   ok("object corrected_value rejected on override", !failObjVal.success);
+}
+
+console.log("\n=== Escalation timeout sweep: >threshold unacked → fallback + board ===");
+{
+  resetStore([]);
+  resetEvents();
+  const old = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1h ago
+  await upsertLead({ lead_id: "ESC1", channel: "form", status: "ESCALATED", escalated_at: old });
+  await upsertLead({ lead_id: "ESC2", channel: "form", status: "ESCALATED", escalated_at: new Date().toISOString() }); // fresh
+  await upsertLead({ lead_id: "PSE", channel: "form", status: "PAUSED", escalated_at: old }); // owner handling
+
+  const r = await sweepEscalations();
+  ok("stale unacked lead swept (fallback sent)", r.swept.includes("ESC1"), JSON.stringify(r.swept));
+  ok("fresh lead NOT swept", !r.swept.includes("ESC2"));
+  ok("PAUSED lead NOT swept", !r.swept.includes("PSE"));
+  ok("board lists all ESCALATED", r.board.includes("ESC1") && r.board.includes("ESC2") && !r.board.includes("PSE"), JSON.stringify(r.board));
+
+  const ev = await listEvents("ESC1");
+  ok("fallback event recorded", ev.some((e) => e.action === "escalation_timeout_fallback"));
+  ok("swept lead now acked (idempotent)", (await getLead("ESC1"))?.escalation_acked === true);
+
+  // Second sweep does not re-fire the fallback (acked).
+  const r2 = await sweepEscalations();
+  ok("acked lead not swept again", !r2.swept.includes("ESC1"));
+}
+
+console.log("\n=== resolveEscalation: owner clears board → ACTIVE + acked ===");
+{
+  resetStore([]);
+  resetEvents();
+  await upsertLead({ lead_id: "RES1", channel: "form", status: "ESCALATED", escalated_at: new Date().toISOString() });
+  const res = await resolveEscalation("RES1", { reason_code: "handled_manually" });
+  ok("resolve ok", res.ok);
+  const lead = await getLead("RES1");
+  ok("status → ACTIVE (funnel resumes)", lead?.status === "ACTIVE", lead?.status);
+  ok("acked = true", lead?.escalation_acked === true);
+  const ev = await listEvents("RES1");
+  ok("resolve_escalation event recorded", ev.some((e) => e.action === "resolve_escalation"));
+
+  // Park variant → PAUSED.
+  await upsertLead({ lead_id: "RES2", channel: "form", status: "ESCALATED", escalated_at: new Date().toISOString() });
+  await resolveEscalation("RES2", { park: true });
+  ok("park variant → PAUSED", (await getLead("RES2"))?.status === "PAUSED");
+
+  // After resolve, the lead drops off the board (no longer ESCALATED).
+  const sweep = await sweepEscalations();
+  ok("resolved leads not on board", !sweep.board.includes("RES1") && !sweep.board.includes("RES2"));
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
