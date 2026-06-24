@@ -2,6 +2,9 @@
   "name": "gogreen-ai-operator",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "description": "Go Green Maintenance AI Operator — autonomous intake→qualify→price→book with HITL escalation (Deltanova design-partner build)",
   "scripts": {
     "dev": "next dev",

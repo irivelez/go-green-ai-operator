@@ -10,16 +10,15 @@ square-footage, or a charge. Hold this when changing anything in the agent path.
 
 ## Verify your work (the gate)
 
-There is **no ESLint and no CI workflow**; the gate is the TypeScript compiler + the test suite:
+The gate is the TypeScript compiler + the **full** test suite (also enforced in CI — `.github/workflows/ci.yml`):
 
 ```bash
-npm run typecheck                                   # tsc --noEmit — must stay at 0 errors
-for f in src/*.test.ts; do npx tsx "$f" || break; done   # ALL 17 suites must pass
+npm run typecheck && npm run test:all   # tsc 0 errors + EVERY src/*.test.ts
 ```
 
-- **`npm test` is NOT the full gate** — it runs only `core` + `operator`. The real gate is **every** `src/*.test.ts`
-  (geo, agent-tools, vision, hitl, scheduler, …). Tests need no API keys (they mock `fetch`).
-- **`npm ci` fails** here (committed lockfile is out of sync) — use **`npm install`**.
+- **`npm test` is NOT the full gate** — it runs only `core` + `operator`. `npm run test:all` runs **every**
+  `src/*.test.ts` (geo, agent-tools, vision, hitl, scheduler, …). Tests need no API keys (they mock `fetch`).
+- `npm ci` works (lockfile reconciled). `npm run build` is part of CI.
 - Test-first; **never edit a test to make failing code pass, never delete a failing test** (Constitution §9).
 
 ## Commands

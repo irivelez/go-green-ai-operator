@@ -8,12 +8,12 @@ after EPIC 4 + at the end. One logical change per commit. Update the row below a
 
 | # | Commit | Epic | Impact | Status |
 |---|---|---|---|---|
-| 0 | tracker (this file) | — | doc | pending |
-| 0a | reconcile lockfile so `npm ci` works (DEDUP-13) | 0 | preserving | pending |
-| 0b-i | `test:all` runner + CI workflow (DEDUP-14) | 0 | preserving | pending |
-| 0b-ii | ESLint flat config (non-blocking) + autofix | 0 | preserving | pending |
-| 0b-iii | Prettier isolated format pass + blame-ignore | 0 | preserving | pending |
-| 0b-iv | `.nvmrc`/engines + gate-doc collapse | 0 | preserving | pending |
+| 0 | tracker (this file) | — | doc | **done** |
+| 0a | reconcile lockfile so `npm ci` works (DEDUP-13) | 0 | preserving | **done** `b961bcc` |
+| 0b-i | `test:all` runner + CI workflow (DEDUP-14) | 0 | preserving | **done** `355a58f` |
+| 0b-ii | ESLint flat config (non-blocking) + autofix | 0 | preserving | **DEFERRED** (own focused pass; gate already CI-enforced) |
+| 0b-iii | Prettier isolated format pass + blame-ignore | 0 | preserving | **DEFERRED** (60-file cosmetic reformat → standalone PR) |
+| 0b-iv | `.nvmrc`/engines + gate-doc collapse | 0 | preserving | **done** |
 | 4a | delete dead v1 wizard + retarget stripe URLs (DEDUP-12) | 4 | behavior-changing (dead) | pending |
 | 1a | `PAID_STATES: Set<LeadStatus>` (DEDUP-09) | 1 | preserving | pending |
 | 1b | `interface WorkOrder` (DEDUP-06) | 1 | preserving | pending |
