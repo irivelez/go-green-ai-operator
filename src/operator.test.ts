@@ -95,4 +95,4 @@ async function main() {
   process.exit(fail === 0 ? 0 : 1);
 }
 
-main();
+void main();

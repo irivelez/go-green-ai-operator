@@ -137,7 +137,6 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const zip = extractZip(text);
   const freq = extractFrequency(text);
   const propType = detectPropertyType(text);
-  const hasAddress = !!prev?.address || looksLikeAddress(text);
   const address = looksLikeAddress(text) ? text : prev?.address;
 
   let lead = await upsertLead({

@@ -9,7 +9,7 @@
 //
 // This is the same isolation pattern as Stripe: the model can propose, but
 // money + measurements stay outside its context window.
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { runConfirmArea, type ToolContext } from "@/src/agent-tools";
 

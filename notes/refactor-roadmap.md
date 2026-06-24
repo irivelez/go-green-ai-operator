@@ -11,7 +11,7 @@ after EPIC 4 + at the end. One logical change per commit. Update the row below a
 | 0 | tracker (this file) | — | doc | **done** |
 | 0a | reconcile lockfile so `npm ci` works (DEDUP-13) | 0 | preserving | **done** `b961bcc` |
 | 0b-i | `test:all` runner + CI workflow (DEDUP-14) | 0 | preserving | **done** `355a58f` |
-| 0b-ii | ESLint flat config (non-blocking) + autofix | 0 | preserving | **DEFERRED** (own focused pass; gate already CI-enforced) |
+| 0b-ii | ESLint flat config + autofix + drive to green, wire into CI | 0 | preserving | **done** (4-rule typed config; 15→0 problems; `npm run lint` now blocking in CI) |
 | 0b-iii | Prettier isolated format pass + blame-ignore | 0 | preserving | **DEFERRED** (60-file cosmetic reformat → standalone PR) |
 | 0b-iv | `.nvmrc`/engines + gate-doc collapse | 0 | preserving | **done** |
 | 4a | delete dead v1 wizard + retarget stripe URLs (DEDUP-12) | 4 | behavior-changing (dead) | **done** (−26 files; agent.ts 521→27; gate 17→16; build clean) |

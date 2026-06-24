@@ -221,7 +221,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
         </div>
       );
     }
-    const res = tp.result;
     switch (tp.toolName) {
       case "qualify_lead":
         return <QualifyCard key={key} lang={language} r={toolResult(tp, "qualify_lead")} />;
@@ -323,7 +322,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
                 }
               } catch (err) {
                 // Surface a soft retry hint into the chat — never silent.
-                // eslint-disable-next-line no-console
                 console.error("[confirm-area] failed:", err);
                 send(c.areaPostFailed);
               }
@@ -416,7 +414,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
       {photos.length > 0 && (
         <div className="flex gap-2 overflow-x-auto border-t border-moss-100 bg-paper/40 px-4 py-2 sm:px-6">
           {photos.map((p, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
             <img key={i} src={p} alt={`yard ${i + 1}`} className="h-12 w-12 shrink-0 rounded-lg border border-moss-200 object-cover" />
           ))}
         </div>

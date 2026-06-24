@@ -10,7 +10,7 @@
 // toDataStreamResponse() → consumed by useChat() on the client, which renders each
 // tool result as an interactive React component (generative UI).
 
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, convertToCoreMessages, type Message } from "ai";
 import { buildTools, type ToolContext } from "@/src/agent-tools";

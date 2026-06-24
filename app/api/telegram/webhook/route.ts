@@ -3,7 +3,8 @@
 // Same brain as the dashboard's Operator console (src/operator.ts). The full Agent SDK
 // runtime (src/agent.ts) is the long-running alternative for hosts that want it.
 
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest} from "next/server";
+import { NextResponse } from "next/server";
 import { runOperator } from "@/src/operator";
 
 export const runtime = "nodejs";

@@ -85,7 +85,6 @@ export function AreaConfirmCard(props: AreaConfirmCardProps) {
     <APIProvider
       apiKey={apiKey}
       onError={(err) =>
-        // eslint-disable-next-line no-console
         console.error("[AreaConfirmCard] Google Maps failed to load:", err)
       }
     >

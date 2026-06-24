@@ -523,7 +523,7 @@ export function ExactPriceCard({
 }
 
 // ── escalation (raise_escalation) ───────────────────────────────────────────────
-export function EscalationCard({ lang, r }: { lang: Lang; r: RaiseEscalationResult }) {
+export function EscalationCard({ lang }: { lang: Lang; r: RaiseEscalationResult }) {
   const t = L[lang];
   return (
     <Shell>
