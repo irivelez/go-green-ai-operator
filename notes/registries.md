@@ -69,7 +69,7 @@ contract:
 |---|---|---|
 | Polygon-area math | `computePolygonSqft` (`geo.ts`, server, spherical-excess) ↔ `google.maps.geometry.spherical.computeArea` (client, `AreaConfirmCard.tsx`) | Server is the authority; client is display-only. Deliberate mirror across the trust boundary. |
 | Two pricing systems | flat `PRICE_BOOK` path (`priceCart`) ↔ measured `pricePerVisit` (area×slope) | Coexist **by design** (legacy flat vs V2 measured). NOT duplication to collapse. |
-| Server contract types | `src/contract.ts` / `store.ts` ↔ `app/components/types.ts` (hand-copied mirror) | Client mirrors server types intentionally; must stay in sync (not import). |
+| Server `Lead` type | `store.ts` → `app/components/types.ts` via `src/lead-dto.ts` | **DERIVED (EPIC 2, 2026-06-23):** the client `Lead` is `Omit<Lead, "_actions"\|"owner_id"\|"events">` imported from the single source — the former hand-copied mirror had already drifted (missing every v2 field). Registry-B "must stay in sync (not import)" relaxed for `Lead`. `Kpis`/`Decision` stay client-local view-models. |
 | Override allow-list | `OVERRIDE_FIELDS` (`hitl.ts`) ↔ leads/override route enum ↔ `REASON_CODES` (`ReviewInbox.tsx`) | Spans server↔client boundary; DRY only within one side, not across. |
 | EN/ES dictionaries | `lib/i18n/en.ts` ↔ `lib/i18n/es.ts` | Parallel-by-design translation pair. |
 | Add-on `kind` filters | `agent-tools.ts` keeps `'fixed'` ↔ `stripe.ts` blocks `'open_ended'` | Opposite predicates over the same catalog — complementary, not duplicate. |
