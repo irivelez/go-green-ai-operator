@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
+import { newWebLeadId } from "@/src/id";
 import type { Tier, SlotOffer, PricingResult, VisionAssessment } from "@/src/contract";
 import type {
   QualifyResult,
@@ -154,7 +155,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
   // §1) — an enumerable id (useId + Date.now) would let an attacker walk every
   // in-flight lead. Until owner-session authz lands, the id itself is the
   // only thing keeping a stranger out of someone else's funnel.
-  const leadIdRef = useRef<string>(`web-${crypto.randomUUID()}`);
+  const leadIdRef = useRef<string>(newWebLeadId());
   const [photos, setPhotos] = useState<string[]>([]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);

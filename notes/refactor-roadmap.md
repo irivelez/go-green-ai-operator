@@ -20,8 +20,8 @@ after EPIC 4 + at the end. One logical change per commit. Update the row below a
 | 1c | `ProposeCheckoutResult` discriminated split (DEDUP-08) | 1 | preserving | **done** |
 | 1d | tool Zod→z.infer + client `ToolResultMap` (DEDUP-04) | 1 | preserving | **done** |
 | 2a | `LeadDTO` derive client types (DEDUP-07) + registry-B | 2 | preserving (B relax) | **done** |
-| 3a | `newWebLeadId()` (DEDUP-11) | 3 | preserving | pending |
-| 3b | `withBody`/`ownerActionRoute` route wrappers (DEDUP-03) | 3 | preserving | pending |
+| 3a | `newWebLeadId()` (DEDUP-11) | 3 | preserving | **done** |
+| 3b | `withBody`/`ownerActionRoute` route wrappers (DEDUP-03) | 3 | preserving | **done** |
 | 6a | shared agent dict + `lib/format.ts` (DEDUP-10) | 6 | preserving | pending |
 | 5a | PAID_STATES gate-bypass hardening + test | 5 | behavior-changing | pending |
 | 5b | retire flat pricing path (compute_pricing/priceCart) | 5 | behavior-changing | pending |

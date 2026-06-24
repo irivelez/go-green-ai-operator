@@ -19,6 +19,7 @@ import {
   Camera,
   Languages,
 } from "lucide-react";
+import { newWebLeadId } from "@/src/id";
 import type { Decision, OperatorResponse } from "./types";
 import { ScoreChip, StageBadge } from "./icons";
 import { fmtRange } from "./format";
@@ -59,13 +60,6 @@ const SAMPLES: Sample[] = [
   },
 ];
 
-function genId(): string {
-  // 8-char base36 random suffix
-  const r = Math.random().toString(36).slice(2, 10);
-  const t = Date.now().toString(36).slice(-4);
-  return `web-${r}${t}`;
-}
-
 export function OperatorConsole({
   onAfterSend,
 }: {
@@ -80,7 +74,7 @@ export function OperatorConsole({
 
   // Generate a stable lead_id on mount
   useEffect(() => {
-    setLeadId(genId());
+    setLeadId(newWebLeadId());
   }, []);
 
   // Auto-scroll to bottom on new bubbles
@@ -94,7 +88,7 @@ export function OperatorConsole({
     setBubbles([]);
     setDraft("");
     setError(null);
-    setLeadId(genId());
+    setLeadId(newWebLeadId());
   }, []);
 
   const send = useCallback(
