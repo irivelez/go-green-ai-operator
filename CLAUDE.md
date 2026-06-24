@@ -11,14 +11,18 @@ when changing anything in the agent path.
 
 ## Verify your work (the gate)
 
-The gate is the TypeScript compiler + the **full** test suite (also enforced in CI — `.github/workflows/ci.yml`, node 22):
+The gate is a type-aware lint + the TypeScript compiler + the **full** test suite (all enforced in CI —
+`.github/workflows/ci.yml`, node 22):
 
 ```bash
-npm run typecheck && npm run test:all   # tsc 0 errors + EVERY src/*.test.ts (16 suites)
+npm run lint && npm run typecheck && npm run test:all   # eslint 0 · tsc 0 · EVERY src/*.test.ts (16 suites)
 ```
 
 - **`npm test` is NOT the full gate** — it runs only `core` + `operator`. `npm run test:all` runs **every**
   `src/*.test.ts` (geo, agent-tools, agent-route, vision, hitl, scheduler, …). Tests need no API keys (they mock `fetch`).
+- **`npm run lint` is CI-blocking** (`eslint.config.mjs`: 4 type-aware rules — `no-floating-promises`,
+  `consistent-type-imports`, `no-unused-vars`, `no-explicit-any`). `npm run format` is Prettier (120-col; `*.md` excluded
+  to protect the hand-aligned docs). Keep both at zero.
 - `npm ci` works (lockfile reconciled). `npm run build` is part of CI. Node is pinned via `.nvmrc` / `engines`.
 - Test-first; **never edit a test to make failing code pass, never delete a failing test** (Constitution §9).
 
@@ -27,6 +31,7 @@ npm run typecheck && npm run test:all   # tsc 0 errors + EVERY src/*.test.ts (16
 - `npm run dev` → Next.js: `/agent` (the generative-UI chat funnel) + `/` (ops dashboard). Works with **zero keys**.
 - `npm run agent` → long-running Telegram brain (`src/index.ts`); needs `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN`.
 - `npm run typecheck` · `npm run build` (`next build`) · `npm run eval` (real-model evals; skips without a key).
+- `npm run lint` (eslint) · `npm run lint:fix` · `npm run format` / `format:check` (prettier).
 
 ## Architecture — two LIVE surfaces over one `src/` core
 
