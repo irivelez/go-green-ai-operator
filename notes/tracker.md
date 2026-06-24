@@ -47,7 +47,7 @@ gate names the full path set explicitly (recon Step 1).
 | 6 | Propose variable names | done | | notes/renames.md Phase 6 — all 9 approved; collision/misdirection/boundary cleared (`priced` string-literals & `contact` prompt-string are not identifiers) |
 | 7 | Apply variable renames | done | | 9 renames, symmetric diff (5/5,5/5,7/7,2/2,5/5,2/2,4/4). Trifecta clean: gate green, seed-loop `l` + `status:"priced"` strings + `:212` prompt-string all intact (over-reach guards). |
 | 8 | Identify functions/params | done | | notes/renames.md Phase 8 — 1 candidate F1 `frEs`→`frequencyEs` (private, operator.ts). Typed single-letter params + callback params left (type annotation suffices). |
-| 9 | Propose function names | pending | | notes-only |
+| 9 | Propose function names | done | | `frEs→frequencyEs` approved (no collision, private, no misdirection) |
 | 10 | Apply function renames | pending | | trifecta |
 | 11 | Classes & file names | pending | | may be "empty surface" |
 | 12 | Clean comments/docstrings | pending | | default-KEEP; diff review |

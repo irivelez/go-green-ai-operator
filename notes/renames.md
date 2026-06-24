@@ -69,3 +69,12 @@ and already good — high churn, no gain — so left. Exactly ONE genuinely cryp
 - `client()` Composio factories (calendar/notify) — clear at the call site `const composio = client(apiKey)`.
 - `collectContact`'s inner `cc` accumulator (operator-of-contact-fields) — acceptable; a separate scope from the
   Phase-7 `cc→contact` (which was `runLead`'s).
+
+## Phase 9 — function PROPOSE + critic verdict
+
+| rename | collision | boundary | misdirection | verdict |
+|---|---|---|---|---|
+| `frEs → frequencyEs` (operator.ts:339) | `frequencyEs` absent | private (not exported / not a tool name) | clearly "frequency in Spanish", matches the `es` branch | **APPROVED** |
+
+No sibling same-named function exists to wrongly merge. Apply in Phase 10 (2 sites: def + the `${frEs(…)}` template
+call, both tsc-checked).
