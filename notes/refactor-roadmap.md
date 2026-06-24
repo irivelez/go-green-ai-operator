@@ -56,7 +56,7 @@ smoke test.**
 | G3 | rate-limit + per-lead daily cap on `/api/funnel/agent` (`@upstash/ratelimit`) → 429 | behavior-changing | **done** (`src/rate-limit.ts`; per-IP 30/10m + per-lead 100/day; no-op without Upstash; 19/19) |
 | G4 | interim `middleware.ts` basic-auth over `/` + `/api/leads/*` + `/api/operator` (funnel/webhook open) | behavior-changing | **done** (`src/dashboard-auth.ts`; unset→dev-open/Vercel-fail-closed; 20/20; middleware compiled) |
 | G5 | prod env+headers: model default note, security headers, optional `vercel.json` | preserving | **done** (HSTS/X-Frame/nosniff/Referrer; sfo1 region; CSP deferred; build green) |
-| G6 | `docs/runbooks/deploy-to-vercel.md` + cross-link from CLAUDE.md | docs | todo |
+| G6 | `docs/runbooks/deploy-to-vercel.md` + cross-link from CLAUDE.md | docs | **done** (env table, KV, live Stripe, dashboard lock, 6 smoke tests) |
 | G7 | (optional) `scripts/load-smoke.mjs` concurrent-session smoke | tooling | todo |
 
 Deferred post-launch: full owner-session auth + `owner_id` isolation (unblocks `CREW_CALENDAR_ENABLED`); store

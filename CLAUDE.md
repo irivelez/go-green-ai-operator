@@ -106,5 +106,6 @@ not lazy), and `spec.md` alone is ~640 lines. Open these only when a task needs 
 - [notes/registries.md](./notes/registries.md) — frozen-boundary / intentional-duplication / known-gaps map.
 - [notes/agent-legibility-research.md](./notes/agent-legibility-research.md) — why these are links, not `@`-imports.
 - [docs/runbooks/add-a-funnel-step.md](./docs/runbooks/add-a-funnel-step.md) — worked, code-grounded edit guide.
+- [docs/runbooks/deploy-to-vercel.md](./docs/runbooks/deploy-to-vercel.md) — go-live checklist: env vars, KV, live Stripe, dashboard lock, smoke tests.
 
 When editing under `src/` or `app/`, a nested `CLAUDE.md` there adds area-specific rules (those *do* load on demand).
