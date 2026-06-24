@@ -98,9 +98,10 @@ contract:
 
 | Doc/comment | Where | What's stale |
 |---|---|---|
-| "Claude Agent SDK / `query()` loop" / Stack list | `README.md:9-12,45,54` | Dep dropped (`AGENTS.md:28`, absent from `package.json`); `agent.ts` uses the Messages API. (HANDOFF §7 already lists "stale README".) |
-| "TEST MODE ONLY" header | `stripe.ts:1` | Implements live charging via `STRIPE_LIVE_OK`. |
-| Any comment naming a removed symbol after phases 7/10 | repo-wide | Re-scan after renames before Phase 12. |
+| "Claude Agent SDK / `query()` loop" / Stack list | `README.md:9-12,45,54` | Dep dropped (`AGENTS.md:28`, absent from `package.json`); `agent.ts` uses the Messages API. **→ deferred to Phase 14** (README is the human front-door doc; the onboarding-doc phase is the right place to reconcile it). |
+| "TEST MODE ONLY" header | `stripe.ts:1` | **FIXED (Phase 12)** — now "test-mode by default; live gated by STRIPE_LIVE_OK=1". Also fixed: `handleStripeWebhook`→`handleStripeEvent` (stripe.ts:10) and the "live keys refused at boot" invariant (stripe.ts:15); webhook route header (app/api/stripe/webhook/route.ts:1). |
+| "TEST MODE ONLY" (smoke script) | `stripe.smoke.ts:1` | **KEPT** — a smoke test legitimately should run test-mode; reasonable caution, not stale. |
+| Rename-stale comments after phases 7/10 | repo-wide | **Scanned (Phase 12): none** — no commented-out code anywhere; `confirmPayment`/`frEs` fully gone. |
 
 ## (E) LOG-NOT-FIX behavior bugs — record, never fix mid-pass
 

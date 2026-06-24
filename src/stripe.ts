@@ -1,4 +1,4 @@
-// Stripe checkout (TEST MODE ONLY) for the Go Green web funnel.
+// Stripe checkout for the Go Green web funnel (test-mode by default; live gated by STRIPE_LIVE_OK=1).
 //
 // BUILD-DECISIONS §A3 charge shape:
 //   Monthly Stripe subscription, first month charged now to lock the booking.
@@ -7,12 +7,12 @@
 // What this module owns:
 //   - createSubscriptionCheckout: build a Stripe Checkout Session (mode:"subscription")
 //     with the recurring monthly line + any FIXED add-ons as one-time first-invoice items.
-//   - handleStripeWebhook: idempotent reducer for checkout.session.completed → marks
+//   - handleStripeEvent: idempotent reducer for checkout.session.completed → marks
 //     the lead paid via upsertLead. Open-ended add-ons are NEVER charged here (defense
 //     in depth — the funnel's selection gate is the primary line of defense).
 //
 // Hard invariants:
-//   - STRIPE_SECRET_KEY must start with "sk_test_". Live keys are refused at boot.
+//   - STRIPE_SECRET_KEY is sk_test_ by default; a live key (sk_live_) requires STRIPE_LIVE_OK=1.
 //   - Open-ended add-ons in the selection set throw before any Stripe call.
 //   - Webhook is idempotent on (lead_id, "stripe.checkout.completed", sessionId).
 

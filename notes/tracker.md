@@ -50,7 +50,7 @@ gate names the full path set explicitly (recon Step 1).
 | 9 | Propose function names | done | | `frEs→frequencyEs` approved (no collision, private, no misdirection) |
 | 10 | Apply function renames | done | | `frEs→frequencyEs` (operator.ts, 2 sites incl. template call). Trifecta: old token gone, symmetric 2/2, gate green. |
 | 11 | Classes & file names | done | | **Empty surface** (valid). Classes (MemoryBackend/JsonBackend/KvBackend) + ~50 types + filenames all clear; data types are frozen boundaries; prompt-trio/tools split is doc-referenced + build-significant → leave. No code change. |
-| 12 | Clean comments/docstrings | pending | | default-KEEP; diff review |
+| 12 | Clean comments/docstrings | done | | 4 stale-fact fixes (stripe.ts header ×3 incl. `handleStripeWebhook`→`handleStripeEvent`; webhook route header). No commented-out code in repo. README staleness → Phase 14. Gate green. |
 | 13 | Research legibility techniques | pending | | notes-only; fact-checked |
 | 14 | Self-onboarding capstone | pending | | doc + fresh-context eval |
 
