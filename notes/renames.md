@@ -51,3 +51,21 @@ All 9 applied, gate green (tsc 0, 17/17). **Symmetric diff** confirms pure renam
 funnel-prompt 7/7, hitl 2/2, pricing 5/5, store 2/2, stripe 4/4. Over-reach guards verified intact: `store.ts:121`
 seed-loop `for (const l of seed)` (the OTHER `l`), both `status: "priced"` string-literals, the `agent.ts:212`
 "their contact details" prompt string.
+
+## Phase 8 — function/param IDENTIFY
+
+Function NAMES are overwhelmingly clear (detectLanguage, lastUserMessage, pickAreaBucket, firstWeekdayOnOrAfter,
+outerRingFromGeoJson, lowConfidenceAssessment, …). Exported names are also widely referenced (tests/routes/prompts)
+and already good — high churn, no gain — so left. Exactly ONE genuinely cryptic private name:
+
+| # | file:line | current | refs | why unclear |
+|---|---|---|---|---|
+| F1 | `src/operator.ts:339` | `frEs` (private) | def + 1 call (`:329`, inside a template `${…}`) | "frEs" is opaque; it maps a frequency string → its Spanish word → `frequencyEs` |
+
+**Considered and LEFT** (the type annotation carries the meaning; renaming is low-value churn):
+- single-letter typed params `s: FunnelState` (agent.ts ×3), `c: PricingCase` (pricing/tools), `s: LeadSignals`
+  (qualify), `l: Ledger` (scheduler), `c: CaseState` (escalation) — the `: Type` annotation already documents them.
+- `.map/.filter/.reduce` callback params (`b` block, `l` lead, `s` seconds, `p` point, `x` acc) — idiomatic, tight scope.
+- `client()` Composio factories (calendar/notify) — clear at the call site `const composio = client(apiKey)`.
+- `collectContact`'s inner `cc` accumulator (operator-of-contact-fields) — acceptable; a separate scope from the
+  Phase-7 `cc→contact` (which was `runLead`'s).
