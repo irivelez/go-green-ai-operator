@@ -14,7 +14,7 @@ export function LeadCard({
   emphasis?: boolean;
   compact?: boolean;
 }) {
-  const isReview = lead.status === "Needs Human Review";
+  const isReview = lead.status === "ESCALATED";
   const range = fmtRange(lead.price_range);
   const locationLine = lead.address || lead.zone || null;
   const display = lead.name?.trim() || `Lead ${lead.lead_id.slice(-6)}`;

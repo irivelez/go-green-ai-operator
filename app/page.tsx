@@ -6,13 +6,18 @@ import { KpiRow } from "./components/KpiRow";
 import { PipelineBoard } from "./components/PipelineBoard";
 import { ReviewInbox } from "./components/ReviewInbox";
 import { OperatorConsole } from "./components/OperatorConsole";
+import { TodayView } from "./components/TodayView";
+import { ConversationsView } from "./components/ConversationsView";
 import type { Lead, Kpis, LeadsResponse } from "./components/types";
+
+type Tab = "today" | "conversations" | "pipeline";
 
 export default function Page() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [tab, setTab] = useState<Tab>("today");
 
   const refresh = useCallback(async () => {
     try {
@@ -65,25 +70,56 @@ export default function Page() {
           <KpiRow kpis={kpis} />
         </section>
 
-        {/* Two-column grid: pipeline + right rail */}
-        <div className="mt-8 sm:mt-10 grid gap-6 lg:gap-8 grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]">
-          {/* Left: Pipeline */}
-          <div className="rise-in" style={{ animationDelay: "120ms" }}>
-            {!hasLoaded ? (
-              <LoadingBoard />
-            ) : leads.length === 0 ? (
-              <EmptyBoard error={error} />
-            ) : (
-              <PipelineBoard leads={leads} />
-            )}
-          </div>
-
-          {/* Right rail: Console + Review */}
-          <div className="space-y-6 rise-in" style={{ animationDelay: "200ms" }}>
-            <OperatorConsole onAfterSend={refresh} />
-            <ReviewInbox leads={leads} onAction={onReview} />
-          </div>
+        {/* Tab switcher — premium pill/segmented control. "Today" default. */}
+        <div
+          className="mt-8 sm:mt-10 flex justify-center sm:justify-start rise-in"
+          style={{ animationDelay: "80ms" }}
+        >
+          <TabSwitcher tab={tab} setTab={setTab} />
         </div>
+
+        {tab === "today" ? (
+          <section
+            className="mt-6 sm:mt-8 rise-in"
+            style={{ animationDelay: "120ms" }}
+            role="tabpanel"
+            aria-labelledby="tab-today"
+          >
+            {!hasLoaded ? <LoadingToday /> : <TodayView leads={leads} />}
+          </section>
+        ) : tab === "conversations" ? (
+          <section
+            className="mt-6 sm:mt-8 rise-in"
+            style={{ animationDelay: "120ms" }}
+            role="tabpanel"
+            aria-labelledby="tab-conversations"
+          >
+            {!hasLoaded ? <LoadingToday /> : <ConversationsView leads={leads} />}
+          </section>
+        ) : (
+          <section
+            className="mt-6 sm:mt-8 grid gap-6 lg:gap-8 grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)]"
+            role="tabpanel"
+            aria-labelledby="tab-pipeline"
+          >
+            {/* Left: Pipeline */}
+            <div className="rise-in" style={{ animationDelay: "120ms" }}>
+              {!hasLoaded ? (
+                <LoadingBoard />
+              ) : leads.length === 0 ? (
+                <EmptyBoard error={error} />
+              ) : (
+                <PipelineBoard leads={leads} />
+              )}
+            </div>
+
+            {/* Right rail: Console + Review */}
+            <div className="space-y-6 rise-in" style={{ animationDelay: "200ms" }}>
+              <OperatorConsole onAfterSend={refresh} />
+              <ReviewInbox leads={leads} onAction={onReview} />
+            </div>
+          </section>
+        )}
 
         <footer className="mt-16 pt-8 border-t border-moss-100">
           <div className="flex items-center justify-between gap-4 flex-wrap text-[11px] text-moss-700/55">
@@ -98,6 +134,83 @@ export default function Page() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function TabSwitcher({
+  tab,
+  setTab,
+}: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Dashboard view"
+      className="inline-flex items-center gap-1 rounded-full border border-moss-200 bg-white p-1 shadow-petal"
+    >
+      <TabButton
+        id="tab-today"
+        active={tab === "today"}
+        onClick={() => setTab("today")}
+        label="Today"
+      />
+      <TabButton
+        id="tab-conversations"
+        active={tab === "conversations"}
+        onClick={() => setTab("conversations")}
+        label="Conversations"
+      />
+      <TabButton
+        id="tab-pipeline"
+        active={tab === "pipeline"}
+        onClick={() => setTab("pipeline")}
+        label="Pipeline"
+      />
+    </div>
+  );
+}
+
+function TabButton({
+  id,
+  active,
+  onClick,
+  label,
+}: {
+  id: string;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-tight transition-all duration-200 ${
+        active
+          ? "bg-moss-700 text-moss-50 shadow-petal"
+          : "text-moss-700 hover:bg-moss-50"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function LoadingToday() {
+  return (
+    <div className="space-y-6">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="h-40 rounded-2xl border border-moss-100 bg-white/60 shimmer"
+        />
+      ))}
+    </div>
   );
 }
 

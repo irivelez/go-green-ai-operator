@@ -4,12 +4,17 @@ import { useState } from "react";
 import { Leaf } from "lucide-react";
 import { GenerativeChat } from "./components/GenerativeChat";
 import type { Lang } from "./components/cards";
+import { MetaPixel } from "@/app/components/MetaPixel";
 
 export default function AgentPage() {
   const [language, setLanguage] = useState<Lang>("en");
 
   return (
     <main className="flex min-h-screen flex-col bg-moss-mesh">
+      {/* Customer-funnel pixel only. The init script fires PageView on mount; */}
+      {/* InitiateCheckout fires from CheckoutCard when a Stripe URL is staged. */}
+      {/* Renders null without NEXT_PUBLIC_META_PIXEL_ID — zero-key dev stays green. */}
+      <MetaPixel />
       <header className="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
         <div className="flex items-center gap-2.5">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-petal">

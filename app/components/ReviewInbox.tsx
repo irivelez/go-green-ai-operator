@@ -33,7 +33,7 @@ export function ReviewInbox({
     payload: ReviewActionPayload,
   ) => Promise<void>;
 }) {
-  const queue = leads.filter((l) => l.status === "Needs Human Review");
+  const queue = leads.filter((l) => l.status === "ESCALATED");
 
   return (
     <section className="rounded-2xl border border-amber-200/70 bg-white shadow-petal overflow-hidden">

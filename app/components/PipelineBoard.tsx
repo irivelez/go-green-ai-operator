@@ -7,29 +7,23 @@ import { STAGE_ORDER } from "./types";
 import { LeadCard } from "./LeadCard";
 
 const COLUMN_TINTS: Record<LeadStatus, string> = {
-  "New Lead": "from-sky-50/60",
-  "Waiting for Info": "from-stone-50/60",
-  "Info Received": "from-violet-50/50",
-  "AI Qualified": "from-moss-50/80",
-  "Ready to Schedule": "from-moss-100/70",
-  "Scheduled": "from-emerald-50/70",
-  "Work Order Created": "from-emerald-100/60",
-  "Needs Human Review": "from-amber-50/70",
-  "Not a Fit": "from-stone-50/40",
-  "Lost / No Response": "from-stone-50/40",
+  ACTIVE: "from-moss-50/80",
+  PAID: "from-moss-100/70",
+  BOOKED: "from-emerald-100/60",
+  ESCALATED: "from-amber-50/70",
+  PAUSED: "from-stone-50/60",
+  ABANDONED: "from-stone-50/40",
+  DEAD: "from-stone-50/40",
 };
 
 const COLUMN_DOT: Record<LeadStatus, string> = {
-  "New Lead": "bg-sky-400",
-  "Waiting for Info": "bg-stone-400",
-  "Info Received": "bg-violet-400",
-  "AI Qualified": "bg-moss-400",
-  "Ready to Schedule": "bg-moss-500",
-  "Scheduled": "bg-emerald-500",
-  "Work Order Created": "bg-emerald-600",
-  "Needs Human Review": "bg-amber-500",
-  "Not a Fit": "bg-stone-400",
-  "Lost / No Response": "bg-stone-300",
+  ACTIVE: "bg-moss-400",
+  PAID: "bg-moss-500",
+  BOOKED: "bg-emerald-600",
+  ESCALATED: "bg-amber-500",
+  PAUSED: "bg-stone-400",
+  ABANDONED: "bg-stone-300",
+  DEAD: "bg-stone-400",
 };
 
 export function PipelineBoard({ leads }: { leads: Lead[] }) {
@@ -77,8 +71,8 @@ export function PipelineBoard({ leads }: { leads: Lead[] }) {
 function PipelineColumn({ stage, items }: { stage: LeadStatus; items: Lead[] }) {
   const tint = COLUMN_TINTS[stage];
   const dot = COLUMN_DOT[stage];
-  const isReview = stage === "Needs Human Review";
-  const muted = stage === "Not a Fit" || stage === "Lost / No Response";
+  const isReview = stage === "ESCALATED";
+  const muted = stage === "DEAD" || stage === "ABANDONED";
 
   return (
     <div
