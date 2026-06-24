@@ -39,3 +39,26 @@ DELETE: `app/funnel/**`; `app/api/funnel/{pricing,slots,vision,checkout}`; `lib/
 `runFunnelAgent`+helpers in `src/agent.ts`. KEEP: `runLead` (used by index.ts); `app/api/funnel/{agent,confirm-area}`;
 `src/funnel-agent-prompt.ts`+`funnel-prompt.ts` (LIVE); EscalationFlag/Reason. RETARGET: `stripe.ts` success/cancel URLs
 `/funnel/*`→`/agent`. Remove FunnelState/FunnelStep from contract.ts iff runLead no longer needs them (gate decides).
+
+---
+
+# Go-live tracker (Vercel, tens of concurrent Meta-ad leads, LIVE Stripe)
+
+Plan of record: `~/.claude/plans/let-s-fix-them-all-snoopy-ember.md` (approved). Decisions: LIVE Stripe day one ·
+interim basic-auth lock on dashboard+owner APIs · I implement + deliver runbook · Vercel. Same gate + atomic-commit
+discipline. **Human pre-flight (not code): rate-card sign-off; accounts/keys; one real-card + one FB/IG in-app-browser
+smoke test.**
+
+| # | Commit | Impact | Status |
+|---|---|---|---|
+| G1 | store prod-safety guard (`prodStoreBackendError`, VERCEL-keyed) + `.env.example` KV block + `store.test.ts` | behavior-changing | **done** (17/17 suites) |
+| G2 | post-payment return+resume: `APP_BASE_URL` → success/cancel URLs + leadId persist + `?checkout=success` resume | behavior-changing | todo |
+| G3 | rate-limit + per-lead daily cap on `/api/funnel/agent` (`@upstash/ratelimit`) → 429 | behavior-changing | todo |
+| G4 | interim `middleware.ts` basic-auth over `/` + `/api/leads/*` + `/api/operator` (funnel/webhook open) | behavior-changing | todo |
+| G5 | prod env+headers: model default note, security headers, optional `vercel.json` | preserving | todo |
+| G6 | `docs/runbooks/deploy-to-vercel.md` + cross-link from CLAUDE.md | docs | todo |
+| G7 | (optional) `scripts/load-smoke.mjs` concurrent-session smoke | tooling | todo |
+
+Deferred post-launch: full owner-session auth + `owner_id` isolation (unblocks `CREW_CALENDAR_ENABLED`); store
+same-lead atomic write (Lua/WATCH — low risk, funnel is sequential per lead); reCAPTCHA/Turnstile; per-token spend
+budget + cheaper-model routing.

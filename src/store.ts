@@ -284,7 +284,27 @@ function getKvBackend(): KvBackend {
 // kv: Vercel prod. json: long-running dev/Telegram host. memory: tests + zero-cfg.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Production-store safety. On Vercel every serverless invocation is its own
+// process, so the memory/json backends are per-instance — a Stripe webhook's
+// paid_at write would land in an instance the chat tab never reads, and booking
+// would never unlock. Only the shared KV backend is correct there. Returns an
+// error string when the (env-derived) config is unsafe, else null. Keyed on
+// VERCEL, NOT NODE_ENV, so `next build` locally and in CI (neither sets VERCEL)
+// is unaffected, while a real Vercel deploy fails loud instead of losing data.
+type StoreEnv = Record<string, string | undefined>; // reads VERCEL / STORE_BACKEND / LEADS_DB_PATH
+export function prodStoreBackendError(env: StoreEnv = process.env): string | null {
+  if (!env.VERCEL) return null;
+  const mode = env.STORE_BACKEND ?? (env.LEADS_DB_PATH ? "json" : "memory");
+  if (mode === "kv") return null;
+  return (
+    `On Vercel, STORE_BACKEND must be "kv" (got "${mode}"). memory/json are per-instance and lose ` +
+    `cross-request state — set STORE_BACKEND=kv and provision Upstash. See docs/runbooks/deploy-to-vercel.md.`
+  );
+}
+
 function pickBackend(): Backend {
+  const configError = prodStoreBackendError();
+  if (configError) throw new Error(configError);
   const mode = process.env.STORE_BACKEND ?? (process.env.LEADS_DB_PATH ? "json" : "memory");
   if (mode === "kv") return getKvBackend();
   if (mode === "json") return new JsonBackend(process.env.LEADS_DB_PATH ?? "data/leads.json");
