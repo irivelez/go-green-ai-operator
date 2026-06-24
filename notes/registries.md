@@ -76,14 +76,19 @@ contract:
 
 ## (C) DEAD-CODE candidates — verify against the oracle INCLUDING `src/*.test.ts` (Phases 1, 4)
 
-| Candidate | Where | Reachable? (to verify) | Action |
+| Candidate | Where | Reachable? (verified) | Action (Phase 1 outcome) |
 |---|---|---|---|
-| `confirmPayment` | `stripe.ts` | Deep-research: "no route calls it." Confirm no test/route import. | Verify → quarantine → delete if truly unref |
-| `SlopePhotoPromptCard` | `app/agent/components/cards.tsx` | Exported, not in `renderTool`. Check `cards-smoke.test.ts` import. | Verify; if test-referenced, KEEP |
-| `isStripeLiveOK`, `getAreaConfidenceThreshold` | `env.ts` | **Tested** in `env.test.ts` → reachable from tests → **NOT dead.** | KEEP (deleting needs deleting a test — forbidden) |
-| `quoteRange` (`@deprecated` shim) | `pricing.ts` | Used by `operator.ts` + `core.test.ts` "compat shim". | KEEP |
-| `decodeIntent` utm/svc/zip branches | `intent.ts` | Covered by `intent.test.ts`. | KEEP (test-reachable) |
-| Unused imports / unused locals | repo-wide | `tsc` (`noUnusedLocals`? check) + finder grep | Finder pass in Phase 1 |
+| `confirmPayment` | `stripe.ts:233` | 0 call sites (only self + 2 comments). Speculative "future success_url handler". | **DELETED** (+ overview bullet + section header) |
+| `RoofBbox` type | `src/area-card-logic.ts:10` | 0 refs; vestige of the retired roof-bbox approach. | **DELETED** |
+| `getDict` | `lib/i18n/index.ts:15` | 0 refs; undocumented exact dup of the documented `t()`. | **DELETED** |
+| `fmtLAtime` (+ private `LA_TIME`) | `app/components/format.ts` | 0 refs; `LA_TIME` consumed only by `fmtLAtime`. | **DELETED** (both) |
+| `SlopePhotoPromptCard` import | `GenerativeChat.tsx:34` | Export is test-referenced (`cards-smoke.test`) → KEEP export; the *import* was unused (no `renderTool` case). | **DELETED import only** |
+| `useLang` | `lib/i18n/index.ts:44` | Finder false positive — used by `useT` (live via `app/funnel/page.tsx`). | KEEP |
+| `t()` (i18n) | `lib/i18n/index.ts:75` | 0 refs but documented intentional API for server fragments. | KEEP (cautious bias) |
+| `contract.print.ts`, `stripe.smoke.ts` | `src/` | Standalone CLI dev-tools (`tsx src/X.ts`) — their own entry points, like `route.ts`/`page.tsx`. | KEEP (intentional utilities, not dead leaves) |
+| `isStripeLiveOK`, `getAreaConfidenceThreshold` | `env.ts` | Tested in `env.test.ts` → test-reachable. | KEEP |
+| `quoteRange` (`@deprecated` shim) | `pricing.ts` | Used by `operator.ts` + `core.test.ts`. | KEEP |
+| `decodeIntent` utm/svc/zip branches | `intent.ts` | Covered by `intent.test.ts`. | KEEP |
 
 > Oracle note: `tsconfig.json` has `strict` + `noUncheckedIndexedAccess` but **not** `noUnusedLocals`/`noUnusedParameters`,
 > so unused locals/imports do NOT fail typecheck — they must be found by the Phase-1 finders, not the gate.

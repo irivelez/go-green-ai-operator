@@ -39,7 +39,7 @@ gate names the full path set explicitly (recon Step 1).
 | # | Phase | Status | Commit | Notes (counts, decisions, links) |
 |---|---|---|---|---|
 | 0 | Recon / bootstrap | done | | gate discovered; architecture ref + 5 registries written; baseline 17/17 green, tsc 0 |
-| 1 | Subtract dead code | pending | | |
+| 1 | Subtract dead code | done | | 5 removals, −56/+0: `confirmPayment` (stripe.ts), `RoofBbox` (area-card-logic), `getDict` (i18n), `fmtLAtime`+`LA_TIME` (format), unused `SlopePhotoPromptCard` import (GenerativeChat). Gate green. |
 | 2 | Magic literals → constants | pending | | |
 | 3 | DRY (within a system) | pending | | |
 | 4 | Dead code, 2nd pass | pending | | |

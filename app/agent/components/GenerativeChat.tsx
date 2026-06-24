@@ -31,7 +31,6 @@ import {
   EscalationCard,
   TraceChip,
   AddressConfirmCard,
-  SlopePhotoPromptCard,
   ExactPriceCard,
 } from "./cards";
 import { AreaConfirmCard } from "./AreaConfirmCard";

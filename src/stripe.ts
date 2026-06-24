@@ -7,7 +7,6 @@
 // What this module owns:
 //   - createSubscriptionCheckout: build a Stripe Checkout Session (mode:"subscription")
 //     with the recurring monthly line + any FIXED add-ons as one-time first-invoice items.
-//   - confirmPayment: read back a Checkout Session to confirm it succeeded.
 //   - handleStripeWebhook: idempotent reducer for checkout.session.completed → marks
 //     the lead paid via upsertLead. Open-ended add-ons are NEVER charged here (defense
 //     in depth — the funnel's selection gate is the primary line of defense).
@@ -224,42 +223,6 @@ export async function createSubscriptionCheckout(
     throw new Error("Stripe did not return a Checkout URL.");
   }
   return { url: session.url, sessionId: session.id };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// confirmPayment — read-back, used by success_url handler or polling
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function confirmPayment(sessionId: string): Promise<CheckoutResult> {
-  const stripe = getStripeClient();
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-  // payment_status "paid" + status "complete" is the success shape.
-  if (session.status === "complete" && session.payment_status === "paid") {
-    const amountTotalCents = session.amount_total ?? 0;
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription?.id;
-    return {
-      status: "succeeded",
-      stripeSubscriptionId: subscriptionId,
-      amountCharged: amountTotalCents / 100,
-      currency: "USD",
-      firstVisitGuaranteeActive: true,
-    };
-  }
-
-  if (session.status === "expired") {
-    return { status: "failed", failureReason: "Checkout session expired." };
-  }
-  if (session.payment_status === "unpaid") {
-    return { status: "pending" };
-  }
-  return {
-    status: "failed",
-    failureReason: `Unexpected session state: status=${session.status} payment_status=${session.payment_status}`,
-  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

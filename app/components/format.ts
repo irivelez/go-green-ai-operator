@@ -27,24 +27,11 @@ const LA_DATETIME = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-const LA_TIME = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Los_Angeles",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 export function fmtLA(iso?: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return LA_DATETIME.format(d) + " PT";
-}
-
-export function fmtLAtime(iso?: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return LA_TIME.format(d) + " PT";
 }
 
 export function relTime(iso?: string): string {

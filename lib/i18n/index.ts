@@ -12,10 +12,6 @@ export type Lang = "en" | "es";
 
 const DICTS: Record<Lang, Dict> = { en, es };
 
-export function getDict(lang: Lang): Dict {
-  return DICTS[lang];
-}
-
 // Detect a sensible default from the browser (only used when the URL is silent).
 function browserDefault(): Lang {
   if (typeof navigator === "undefined") return "en";
