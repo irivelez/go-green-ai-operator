@@ -12,6 +12,7 @@
     "test:operator": "tsx src/operator.test.ts",
     "test:agent": "tsx src/agent.test.ts",
     "test": "tsx src/core.test.ts && tsx src/operator.test.ts",
+    "test:all": "node scripts/test-all.mjs",
     "eval": "tsx src/agent-evals.ts",
     "typecheck": "tsc --noEmit"
   },
