@@ -15,31 +15,44 @@ irreversible action is re-derived server-side from a canonical contract; the LLM
 - **Deterministic engine (`src/`, LLM-free):** `pricing.ts` (area-bucket × slope × frequency, + flat `PRICE_BOOK`),
   `contract.ts` (shared types, `PRICE_BOOK`, `FREQUENCY_MULTIPLIER`, `ADD_ON_CATALOG`), `qualify.ts`, `escalation.ts`,
   `area-card-logic.ts`, `intent.ts` (ad-param decode), `scheduler.ts` (slots/booking), `calendar.ts` (crew handoff),
-  `metrics.ts` (KPIs), `notify.ts`.
+  `metrics.ts` (KPIs), `notify.ts`, `id.ts` (`newWebLeadId` → `web-<uuid>`), `lead-dto.ts` (`LeadDTO` = `Omit<Lead,
+  internal>`, the single source the client `Lead` derives from).
 - **Geo / measurement:** `geo.ts` (address-validate, DataSF parcel, slope, polygon area) — key-guarded, never-throws.
 - **Vision:** `vision.ts` — photos → strict-JSON `VisionAssessment`; also the photo SSRF/exfil allowlist.
-- **Agent tool layer:** `agent-tools.ts` (12 `run*` handlers + `buildTools`) — the safety gates live here.
-- **LLM brains / prompts:** `funnel-agent-prompt.ts` (V2 tool flow), `funnel-prompt.ts`, `prompt.ts` (voice),
-  `operator.ts` (deterministic decision the dashboard LLM only phrases), `agent.ts` (web-funnel reasoning
-  orchestrator; legacy Telegram path routed through the operator), `index.ts` (Telegram entrypoint), `tools.ts`.
+- **Agent tool layer:** `agent-tools.ts` is a thin BARREL — re-exports the per-stage modules + holds
+  `buildTools(ctx)` (the **11** Vercel AI SDK tools). The `run*` handlers + lifted `*ArgsSchema` live in
+  `src/agent-tools/`: `shared.ts` (`ToolContext`, enums, `PAID_STATES`, `MAX_*`), `qualify.ts`, `measure.ts`
+  (validate_address + measure_property + confirm_area), `price.ts` (recommend_tier + compute_exact_price),
+  `checkout.ts` (propose_checkout), `schedule.ts` (offer_slots + confirm_booking), `escalate.ts`, `photos.ts`. The
+  safety gates live here. External imports still use `@/src/agent-tools` / `./agent-tools`.
+- **LLM brains / prompts:** `funnel-agent-prompt.ts` (the `/agent` tool flow), `funnel-prompt.ts`, `prompt.ts` (voice),
+  `operator.ts` (deterministic decision the dashboard LLM only phrases), `agent.ts` (a ~27-line SHIM: `runLead` →
+  `runOperator` for the legacy Telegram path; `runFunnelAgent` + helpers were removed), `index.ts` (Telegram
+  entrypoint), `tools.ts`.
 - **Persistence:** `store.ts` (per-lead async `Backend`: memory | json | kv/Upstash-Redis), `seed.ts`, `env.ts`.
-- **Payments:** `stripe.ts` + `app/api/stripe/webhook` + `app/api/funnel/checkout`.
-- **HTTP surface (Next.js, 14 routes):** `app/api/funnel/{agent,checkout,confirm-area,pricing,slots,vision}`,
-  `app/api/leads` + `leads/[id]/{approve,reject,override,events}`, `app/api/operator`, `app/api/telegram/webhook`.
-- **Frontend:** `app/agent/**` (primary generative-UI chat funnel: `GenerativeChat.tsx`, `cards.tsx`,
-  `AreaConfirmCard.tsx`), `app/components/**` (ops dashboard), `app/funnel/**` (legacy wizard), `lib/i18n/**` (EN/ES).
+- **Payments:** `stripe.ts` (`handleStripeEvent` sets `lead.paid_at`) + `app/api/stripe/webhook`. Checkout is staged by
+  the `propose_checkout` tool, not a route.
+- **HTTP surface (Next.js, 10 routes):** `app/api/funnel/{agent,confirm-area}` (the only live funnel routes — the
+  `{pricing,slots,vision,checkout}` mock routes were deleted), `app/api/leads` + `leads/[id]/{approve,reject,override,events}`,
+  `app/api/operator`, `app/api/telegram/webhook`. Shared route-body boilerplate lives in `app/api/_helpers.ts`
+  (`withBody` / `ownerActionRoute`).
+- **Frontend:** `app/agent/**` (the live generative-UI chat funnel: `GenerativeChat.tsx`, `cards.tsx`,
+  `AreaConfirmCard.tsx`), `app/components/**` (the ops dashboard; `types.ts` derives the client `Lead` from
+  `src/lead-dto.ts`, `format.ts` holds the unified `money`/slot formatters). The `/funnel` multi-step wizard
+  (`app/funnel/**`) and `lib/i18n/**` were DELETED — do NOT resurrect them.
 
 **Data / control flow:** lead state is a single `Lead` record (`store.ts`), the single source of truth; every route
 reads/writes it through the async `Backend`. The agent route (`app/api/funnel/agent/route.ts`) runs a Vercel AI SDK
-`streamText` + tools loop (`maxSteps`); each tool result renders an interactive card client-side.
+`streamText` + tools loop (`maxSteps`); each tool result renders an interactive card client-side via `renderTool`.
 
 **Entry points:** `npm run dev` (Next.js → `/agent` funnel + `/` dashboard, zero keys); `npm run agent`
-(long-running Telegram, needs a key); `npm test` / per-suite `tsx src/*.test.ts`.
+(legacy long-running Telegram, needs a key); `npm run test:all` (all 16 `src/*.test.ts`) / `npm test` (core+operator only).
 
 **Where do I look for X:** prices/buckets/slope mults → `pricing.ts`; tiers/add-ons/types → `contract.ts`; what the
-LLM may do / step order → `funnel-agent-prompt.ts` + `agent-tools.ts`; address/parcel/slope → `geo.ts`; vision/photo
-allowlist → `vision.ts`; Stripe → `stripe.ts`; slots/calendar → `scheduler.ts` / `calendar.ts`; Lead shape/store →
-`store.ts`; HITL → `hitl.ts` + `app/components/ReviewInbox.tsx`; KPIs → `metrics.ts`; env keys → `env.ts` + `.env.example`.
+LLM may do / step order → `funnel-agent-prompt.ts` + `agent-tools/` (barrel: `agent-tools.ts`); address/parcel/slope →
+`geo.ts`; vision/photo allowlist → `vision.ts`; Stripe → `stripe.ts`; slots/calendar → `scheduler.ts` / `calendar.ts`;
+Lead shape/store → `store.ts`; client Lead shape → `lead-dto.ts`; HITL → `hitl.ts` + `app/components/ReviewInbox.tsx`;
+KPIs → `metrics.ts`; env keys → `env.ts` + `.env.example`.
 
 ---
 
@@ -61,7 +74,7 @@ contract:
 | DataSF dataset ids (`acdm-wktn` parcels, `ramy-di5m` footprints), Socrata/Google/Stripe/Composio API URLs+params | External API contract | `geo.ts`, `stripe.ts`, `calendar.ts` | Third-party contract |
 | `VisionAssessment` schema keys; `ALLOWED_PHOTO_RE` | Serialized + security | `vision.ts` | Stored on lead; the regex is a security control |
 | npm script names (`dev`, `build`, `agent`, `test`, `eval`, `typecheck`) | Tooling contract | `package.json` | Invoked by humans/docs/this tracker |
-| i18n message keys | Client contract | `lib/i18n/{en,es}.ts` | Referenced by components by key |
+| ~~i18n message keys~~ | ~~Client contract~~ | ~~`lib/i18n/{en,es}.ts`~~ | **REMOVED** — `lib/i18n/**` was deleted with the `/funnel` wizard; no live consumer remains. No longer a frozen boundary. |
 
 ## (B) INTENTIONAL-DUPLICATION registry — do NOT merge (guards Phase 3)
 
@@ -71,7 +84,7 @@ contract:
 | Two pricing systems | flat `PRICE_BOOK` path (`priceCart`) ↔ measured `pricePerVisit` (area×slope) | **FLAT PATH RETIRED (2026-06-23):** the measured `pricePerVisit` (area×slope) path is now the sole customer-facing pricing surface; the `compute_pricing` LLM tool + `runComputePricing` are gone. `priceCart` SURVIVES — `runProposeCheckout` still uses it for add-on resolution (fixed vs open-ended classification, catalog lookup/validation), and it backs the legacy flat-recurring fallback when a lead was never measured. Still NOT duplication to collapse. |
 | Server `Lead` type | `store.ts` → `app/components/types.ts` via `src/lead-dto.ts` | **DERIVED (EPIC 2, 2026-06-23):** the client `Lead` is `Omit<Lead, "_actions"\|"owner_id"\|"events">` imported from the single source — the former hand-copied mirror had already drifted (missing every v2 field). Registry-B "must stay in sync (not import)" relaxed for `Lead`. `Kpis`/`Decision` stay client-local view-models. |
 | Override allow-list | `OVERRIDE_FIELDS` (`hitl.ts`) ↔ leads/override route enum ↔ `REASON_CODES` (`ReviewInbox.tsx`) | Spans server↔client boundary; DRY only within one side, not across. |
-| EN/ES dictionaries | `lib/i18n/en.ts` ↔ `lib/i18n/es.ts` | Parallel-by-design translation pair. |
+| ~~EN/ES dictionaries~~ | ~~`lib/i18n/en.ts` ↔ `lib/i18n/es.ts`~~ | **REMOVED** — `lib/i18n/**` was deleted with the `/funnel` wizard. The live EN/ES pair is now the inline `COPY` en/es maps in `app/agent/components/GenerativeChat.tsx` (a parallel-by-design pair). |
 | Add-on `kind` filters | `agent-tools.ts` keeps `'fixed'` ↔ `stripe.ts` blocks `'open_ended'` | Opposite predicates over the same catalog — complementary, not duplicate. |
 | `channel ?? "form"` default | `store`-layer callers in `agent-tools.ts` (×8), `stripe.ts:281`, `app/api/funnel/agent/route.ts:86`, `app/api/operator/route.ts:26` | Phase-3 finding: a 1-line default spread across module boundaries; the agent-tools ×8 are incidental (7/8 also read `existing` for other fields). NOT a safe within-boundary merge — leave inline. |
 
@@ -84,8 +97,8 @@ contract:
 | `getDict` | `lib/i18n/index.ts:15` | 0 refs; undocumented exact dup of the documented `t()`. | **DELETED** |
 | `fmtLAtime` (+ private `LA_TIME`) | `app/components/format.ts` | 0 refs; `LA_TIME` consumed only by `fmtLAtime`. | **DELETED** (both) |
 | `SlopePhotoPromptCard` import | `GenerativeChat.tsx:34` | Export is test-referenced (`cards-smoke.test`) → KEEP export; the *import* was unused (no `renderTool` case). | **DELETED import only** |
-| `useLang` | `lib/i18n/index.ts:44` | Finder false positive — used by `useT` (live via `app/funnel/page.tsx`). | KEEP |
-| `t()` (i18n) | `lib/i18n/index.ts:75` | 0 refs but documented intentional API for server fragments. | KEEP (cautious bias) |
+| `useLang` | ~~`lib/i18n/index.ts:44`~~ | Was KEEP — `useT`'s only consumer was `app/funnel/page.tsx`. | **GONE** — `lib/i18n/**` + `app/funnel/**` later deleted together. |
+| `t()` (i18n) | ~~`lib/i18n/index.ts:75`~~ | Was KEEP (intentional server-fragment API). | **GONE** — deleted with `lib/i18n/**`. |
 | `contract.print.ts`, `stripe.smoke.ts` | `src/` | Standalone CLI dev-tools (`tsx src/X.ts`) — their own entry points, like `route.ts`/`page.tsx`. | KEEP (intentional utilities, not dead leaves) |
 | `isStripeLiveOK`, `getAreaConfidenceThreshold` | `env.ts` | Tested in `env.test.ts` → test-reachable. | KEEP |
 | `quoteRange` (`@deprecated` shim) | `pricing.ts` | Used by `operator.ts` + `core.test.ts`. | KEEP |
@@ -107,7 +120,7 @@ contract:
 
 | Bug | file:line | Wrong behavior (vs expected) |
 |---|---|---|
-| Divergent slot generators | `scheduler.ts` windows `[08-10,10-12,13-15,15-17]` (UTC) vs `app/api/funnel/slots/route.ts` `[08-11,11-14,14-17,17-19]` (`-07:00`, host-local `getDay()`) | UI offers slot times that don't match what `bookSlot` actually books. |
+| ~~Divergent slot generators~~ | ~~`scheduler.ts` (UTC windows) vs `app/api/funnel/slots/route.ts` (`-07:00`, host-local `getDay()`)~~ | **CLOSED** — the duplicate `app/api/funnel/slots` route was deleted; scheduling now flows through one source (`scheduler.ts` → `offer_slots`/`confirm_booking`). Do NOT re-flag. |
 | Partial-write reverts to flat charge | `agent-tools.ts` measured-vs-flat branch (keys on `confirmed_sqft>0 && slope_tier`) | A store write that loses `slope_tier` silently bills the flat tier instead of the measured price (re-opens "review blocker A" via a different gap). |
 | Same-lead read-modify-write race | `store.ts:316-333` (already documented in code) | Concurrent writers on one lead lose the loser (last-writer-wins); Stripe webhook vs `runConfirmArea`. |
 | `PAID_STATES` conflation | `operator.ts:262`, `hitl.ts:123` set "Ready to Schedule" without a Stripe charge | Harmless today (LLM can't reach those setters); a latent payment-gate bypass if ever wired to `confirm_booking`. |
