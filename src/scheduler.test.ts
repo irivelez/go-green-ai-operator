@@ -27,7 +27,7 @@ console.log("\n=== Scheduler 1: GENERATION (Sun 2026-06-14 → first Thu 2026-06
 {
   resetSlots();
   resetStore([]);
-  const slots = generateSlots(FROM);
+  const slots = await generateSlots(FROM);
   ok("first slotId === 2026-06-18-T1", slots[0]?.slotId === "2026-06-18-T1", slots[0]?.slotId);
   ok("first slot date === 2026-06-18", slots[0]?.date === "2026-06-18");
   ok("first slot crewSize === 2", slots[0]?.crewSize === 2);
@@ -46,7 +46,7 @@ console.log("\n=== Scheduler 1: GENERATION (Sun 2026-06-14 → first Thu 2026-06
   // every date is within the 14-day serve window [FROM, FROM+14)
   const windowEnd = new Date(FROM);
   windowEnd.setUTCDate(windowEnd.getUTCDate() + 14);
-  const allInWindow = slots.every((s) => {
+  const allInWindow: boolean = slots.every((s) => {
     const d = new Date(s.date + "T00:00:00Z");
     return d.getTime() >= FROM.getTime() && d.getTime() < windowEnd.getTime();
   });
@@ -133,8 +133,8 @@ console.log("\n=== Scheduler 4: IDEMPOTENT (same lead, same slot, twice) ===");
   );
 
   // Ledger has exactly 1 booking → total − available === 1
-  const total = generateSlots(FROM).length;
-  const avail = availableSlots("X", FROM).length;
+  const total = (await generateSlots(FROM)).length;
+  const avail = (await availableSlots("X", FROM)).length;
   ok(
     "ledger has 1 booking (total − available === 1)",
     total - avail === 1,
@@ -148,10 +148,26 @@ console.log("\n=== Scheduler 5: WAITLIST GATE (all slots booked) ===");
   resetStore([]);
   await upsertLead({ lead_id: "LE", channel: "telegram" });
 
-  const slots = generateSlots(FROM);
+  const slots = await generateSlots(FROM);
   for (const s of slots) await bookSlot("LE", s.slotId, FROM);
-  ok("availableSlots empty", availableSlots("LF", FROM).length === 0);
-  ok("noSlotsInWindow === true", noSlotsInWindow(FROM) === true);
+  ok("availableSlots empty", (await availableSlots("LF", FROM)).length === 0);
+  ok("noSlotsInWindow === true", (await noSlotsInWindow(FROM)) === true);
+}
+
+console.log("\n=== Scheduler 6: CONCURRENT CLAIM (two leads, same slot, Promise.all) ===");
+{
+  resetSlots();
+  resetStore([]);
+  await upsertLead({ lead_id: "CC1", channel: "telegram" });
+  await upsertLead({ lead_id: "CC2", channel: "telegram" });
+  const [a, b] = await Promise.all([
+    bookSlot("CC1", "2026-06-18-T3", FROM),
+    bookSlot("CC2", "2026-06-18-T3", FROM),
+  ]);
+  const wins = [a, b].filter((r) => r.ok).length;
+  const taken = [a, b].filter((r) => !r.ok && r.reason === "taken").length;
+  ok("exactly one concurrent claim wins", wins === 1, `wins=${wins} taken=${taken}`);
+  ok("the loser sees 'taken'", taken === 1, JSON.stringify([a, b]));
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

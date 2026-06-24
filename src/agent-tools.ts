@@ -21,7 +21,10 @@ import { priceCart, pricePerVisit } from "./pricing";
 import { analyzeYardPhotos, isAllowedPhoto } from "./vision";
 import { availableSlots, bookSlot } from "./scheduler";
 import { createSubscriptionCheckout } from "./stripe";
-import { upsertLead, getLead } from "./store";
+import { upsertLead, getLead, type LeadStatus } from "./store";
+import { materializeCustomer, canonicalEmail, lookupCustomerByEmail } from "./customer";
+import { getInFlightUrl, storeInFlightUrl, checkoutIdempotencyKey } from "./checkout-guard";
+import { logEvent } from "./log";
 import {
   validateAddress,
   autoMeasureRoofBbox,
@@ -31,6 +34,9 @@ import {
   measureFromAddress,
 } from "./geo";
 import { createCrewEvent } from "./calendar";
+import { scheduleAppointmentReminders } from "./reminders";
+import { enqueueOwnerEscalation } from "./notify";
+import { createJobWithFirstVisit } from "./job";
 import {
   PRICE_BOOK,
   monthlyFromVisit,
@@ -51,8 +57,9 @@ const TIER_ORDER: Tier[] = ["essential", "signature", "estate"];
 const TierEnum = z.enum(["essential", "signature", "estate"]);
 const FrequencyEnum = z.enum(["weekly", "biweekly", "monthly"]);
 
-// Lead is "paid" once the Stripe webhook (stripe.ts) advances it past qualification.
-const PAID_STATES = new Set(["Ready to Schedule", "Scheduled", "Work Order Created"]);
+// V2 booking gate: only stripe.ts writes PAID (no tool does), so a lead is
+// bookable only once PAID or already BOOKED.
+const PAID_STATES = new Set<LeadStatus>(["PAID", "BOOKED"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // qualify_lead
@@ -92,7 +99,7 @@ export async function runQualify(
     desired_frequency: args.frequency ?? existing?.desired_frequency,
     lead_score: score.score,
     risk_level: score.risk,
-    status: escalate ? existing?.status ?? "New Lead" : "AI Qualified",
+    status: escalate ? existing?.status ?? "ACTIVE" : "ACTIVE",
   });
 
   return {
@@ -209,6 +216,19 @@ export async function runProposeCheckout(
     return { status: "missing_photos", message: "Photos are required before autonomous checkout." };
   }
 
+  // Materialize the Customer (email PK) BEFORE any checkout staging so returning
+  // recognition (todo 20) + the double-charge guard (todo 7) share one canonical
+  // identity. The canonical email links the lead to the customer record.
+  const customerEmail = canonicalEmail(args.email);
+  if (args.email && args.email.trim()) {
+    await materializeCustomer(args.email, {
+      address: args.address,
+      sqft: lead.confirmed_sqft,
+      slope: lead.slope_tier,
+    });
+    await upsertLead({ lead_id: ctx.leadId, channel: lead.channel, customer_email: customerEmail });
+  }
+
   // priceCart is still used for the add-on resolution (fixed vs open-ended,
   // catalog lookup, validation) — only the recurring side switches to the
   // measured number when the lead has been measured. Open-ended add-ons stay
@@ -296,7 +316,7 @@ export async function runConfirmBooking(
   await upsertLead({
     lead_id: ctx.leadId,
     channel: lead.channel,
-    status: "Scheduled",
+    status: "BOOKED",
     visit_at: result.slot.startTime,
     work_order: {
       slotId: result.slot.slotId,
@@ -305,6 +325,25 @@ export async function runConfirmBooking(
       crewSize: result.slot.crewSize,
     },
   });
+  // Recurring spine (todo 22): a booked first service creates the Job + first
+  // Visit (idempotent on the derived job id). Best-effort — a Job-store hiccup
+  // must not fail an already-persisted booking.
+  if (lead.customer_email) {
+    void createJobWithFirstVisit({
+      customer_email: lead.customer_email,
+      // Use the REAL subscription id the paid webhook wrote (Oracle B2) so the Job
+      // id matches what invoice.payment_failed / subscription.deleted compute.
+      // Fall back to the session id only if the webhook hasn't landed yet.
+      stripe_subscription_id: lead.stripe_subscription_id ?? lead.staged_session_id,
+      frequency: lead.desired_frequency ?? "biweekly",
+      tier: lead.suggested_package ?? "signature",
+      scheduled_at: result.slot.startTime,
+      slot_id: result.slot.slotId,
+      work_order: { window: `${result.slot.startTime}–${result.slot.endTime}`, date: result.slot.date },
+    }).catch((e) =>
+      console.warn(`[booking] job creation failed for lead=${ctx.leadId}: ${e instanceof Error ? e.message : String(e)}`),
+    );
+  }
   // Fire-and-forget crew handoff (spec §A.5). Calendar failure MUST NOT fail the booking;
   // createCrewEvent never throws, BUT the .then body now awaits two store ops (getLead +
   // upsertLead) that CAN throw on Upstash REST. Surface those via console.warn instead of
@@ -336,12 +375,101 @@ export async function runConfirmBooking(
         `[booking] calendar handoff failed for lead=${ctx.leadId}: ${e instanceof Error ? e.message : String(e)}`,
       ),
     );
+  // Schedule day-before + morning-of reminders (todo 15). Best-effort: a queue
+  // hiccup must not fail an already-persisted booking.
+  void scheduleAppointmentReminders(ctx.leadId, result.slot.startTime).catch((e) =>
+    console.warn(
+      `[booking] reminder scheduling failed for lead=${ctx.leadId}: ${e instanceof Error ? e.message : String(e)}`,
+    ),
+  );
   return { status: "booked", slot: result.slot };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // validate_address — Google Address Validation pipeline, key-guarded
 // ─────────────────────────────────────────────────────────────────────────────
+
+// recognize_customer — confirm-first returning-customer recognition (todo 20).
+//
+// When the customer gives their email, look up the Customer (todo 2). If known,
+// greet CONFIRM-FIRST (Metis C1, user-locked): reveal NO address until the
+// customer affirms "same location". This tool returns ONLY recognition state +
+// the confirm-first prompt; it NEVER returns the stored address (no enumeration /
+// no leak in the public funnel). The address is surfaced only AFTER affirmation,
+// via apply_returning_customer below.
+export interface RecognizeCustomerResult {
+  status: "returning" | "new";
+  greeting?: string;
+}
+
+export async function runRecognizeCustomer(
+  ctx: ToolContext,
+  args: { email: string },
+): Promise<RecognizeCustomerResult> {
+  const existing = await getLead(ctx.leadId);
+  const email = canonicalEmail(args.email);
+  // Link the email to the lead so downstream tools (checkout, recognition apply)
+  // share one identity.
+  await upsertLead({ lead_id: ctx.leadId, channel: existing?.channel ?? "form", customer_email: email });
+
+  const customer = await lookupCustomerByEmail(email);
+  if (customer && (customer.address || customer.sqft)) {
+    return {
+      status: "returning",
+      greeting:
+        "Welcome back — we have your property on file. Same location as last time? (Just confirm and I can skip the address and measuring.)",
+    };
+  }
+  return { status: "new" };
+}
+
+// apply_returning_customer — called ONLY after the customer affirms (todo 20).
+//   same_garden=true  → reuse stored sqft/slope SERVER-SIDE for pricing; the
+//                       customer still re-enters their ADDRESS (never revealed —
+//                       cross-model review B2 PII fix). Returns NO PII.
+//   same_garden=false → new-address flow; the stored address is OVERWRITTEN on
+//                       checkout (AG5, flat model).
+// The result intentionally carries NO address/sqft/slope — those must never reach
+// the public funnel on an unverified email.
+export interface ApplyReturningResult {
+  status: "reused" | "new_address" | "unknown";
+}
+
+export async function runApplyReturningCustomer(
+  ctx: ToolContext,
+  args: { sameGarden: boolean },
+): Promise<ApplyReturningResult> {
+  const lead = await getLead(ctx.leadId);
+  const email = lead?.customer_email;
+  if (!email) return { status: "unknown" };
+  const customer = await lookupCustomerByEmail(email);
+  if (!customer) return { status: "unknown" };
+
+  if (!args.sameGarden) {
+    // Different address → fall through to the normal address flow (overwrite later).
+    return { status: "new_address" };
+  }
+  // SAME GARDEN — but the email is UNVERIFIED on this public funnel (cross-model
+  // review B2: returning the stored address here let anyone who GUESSES a
+  // customer's email read their home address). So we NEVER reveal or reuse the
+  // stored ADDRESS: the customer must re-enter it themselves (typing it is the
+  // ownership proof). We DO reuse the stored sqft/slope SERVER-SIDE for pricing
+  // only — those are non-identifying measurements that never go back to the
+  // customer or the model. The tool result carries NO PII; it only signals that
+  // the model should ask the customer to re-enter their address, after which
+  // normal validate_address runs and pricing reuses the stored measurement.
+  await upsertLead({
+    lead_id: ctx.leadId,
+    channel: lead?.channel ?? "form",
+    confirmed_sqft: customer.sqft,
+    slope_tier: customer.slope,
+    area_source: "auto",
+    area_confirmed_by_customer: true,
+  });
+  // status:"reused" → measurement reused server-side; NO address/sqft/slope in the
+  // response. The model still asks the customer to confirm/re-enter the address.
+  return { status: "reused" };
+}
 
 export interface ValidateAddressToolResult {
   status: "validated" | "needs_confirm" | "unvalidatable" | "error";
@@ -683,12 +811,23 @@ export async function runRaiseEscalation(
   await upsertLead({
     lead_id: ctx.leadId,
     channel: existing?.channel ?? "form",
-    status: "Needs Human Review",
+    status: "ESCALATED",
+    escalated_at: existing?.escalated_at ?? new Date().toISOString(),
     escalation_reason: args.primary,
     internal_notes: [existing?.internal_notes, `ESCALATION (${args.primary}): ${args.brief}`]
       .filter(Boolean)
       .join("\n"),
   });
+  // Owner push via the durable queue (todo 17): retry → DLQ instead of fire-and-
+  // forget. Best-effort enqueue — a queue hiccup must not fail the escalation.
+  void enqueueOwnerEscalation({
+    lead_id: ctx.leadId,
+    channel: existing?.channel ?? "form",
+    reason: args.primary,
+    brief: args.brief,
+  }).catch((e) =>
+    console.warn(`[escalation] enqueue failed for lead=${ctx.leadId}: ${e instanceof Error ? e.message : String(e)}`),
+  );
   return {
     escalated: true,
     autoChargeBlocked: true,
@@ -721,6 +860,19 @@ export async function runAnalyzePhotos(
     photos: urls,
     vision_assessment: assessment as unknown as Record<string, unknown>,
   });
+
+  // Deterministic guardrail (todo 10): below the confidence floor the LOOP forces
+  // escalation rather than letting the LLM choose to proceed on bad photos. The
+  // tool result carries forcedEscalation so the model can't price.
+  const minConfidence = Number(process.env.VISION_CONFIDENCE_MIN ?? 0.6);
+  if (assessment.confidence < minConfidence) {
+    await runRaiseEscalation(ctx, {
+      primary: "low_vision_confidence",
+      flags: ["low_vision_confidence"],
+      brief: `Vision confidence ${assessment.confidence.toFixed(2)} < ${minConfidence}; photos unusable for autonomous pricing.`,
+    });
+    return { ...assessment, forcedEscalation: true } as VisionAssessment & { forcedEscalation: true };
+  }
   return assessment;
 }
 
@@ -729,7 +881,21 @@ export async function runAnalyzePhotos(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildTools(ctx: ToolContext) {
-  return {
+  const tools = {
+    recognize_customer: tool({
+      description:
+        "When the customer gives their email, call this to check if they're a returning customer. If returning, greet them confirm-first ('Welcome back — same location as last time?') WITHOUT revealing their stored address. NEVER state the stored address yourself; only ask them to confirm. On a 'new' result, continue the normal new-customer flow.",
+      parameters: z.object({ email: z.string().describe("The customer's email") }),
+      execute: async (args) => runRecognizeCustomer(ctx, args),
+    }),
+
+    apply_returning_customer: tool({
+      description:
+        "Call ONLY after a recognized returning customer affirms (or denies) 'same location as last time'. sameGarden=true reuses their stored address + measurement so you SKIP validate_address and measure_property and go straight to compute_exact_price. sameGarden=false means a new address — proceed with the normal validate_address flow.",
+      parameters: z.object({ sameGarden: z.boolean() }),
+      execute: async (args) => runApplyReturningCustomer(ctx, args),
+    }),
+
     qualify_lead: tool({
       description:
         "Qualify the lead: check the service address is in the San Francisco service area and score the lead (A/B/C). Call this once you have an address.",
@@ -830,6 +996,14 @@ export function buildTools(ctx: ToolContext) {
         const decision = await runProposeCheckout(ctx, args);
         if (decision.status !== "ready" || !process.env.STRIPE_SECRET_KEY) return decision;
         try {
+          // Double-charge guard (todo 7): reuse an existing in-flight Checkout URL
+          // for this (email, tier, frequency) if one is staged. Otherwise create
+          // with a deterministic Idempotency-Key (the PRIMARY defense — concurrent
+          // callers get the SAME Stripe session), then cache the REAL url.
+          const existingUrl = await getInFlightUrl(args.email, args.tier, args.frequency);
+          if (existingUrl) {
+            return { ...decision, url: existingUrl };
+          }
           const session = await createSubscriptionCheckout({
             tier: args.tier,
             frequency: args.frequency,
@@ -842,8 +1016,20 @@ export function buildTools(ctx: ToolContext) {
               address: args.address,
             },
             leadId: ctx.leadId,
+            idempotencyKey: checkoutIdempotencyKey(args.email, args.tier, args.frequency),
           });
-          return { ...decision, url: session.url, sessionId: session.sessionId };
+          const url = await storeInFlightUrl(args.email, args.tier, args.frequency, session.url);
+          // Persist the staged session + purchase coordinates so the re-engagement
+          // worker (todo 16) can retrieve/re-stage an expired session.
+          const freshLead = await getLead(ctx.leadId);
+          await upsertLead({
+            lead_id: ctx.leadId,
+            channel: freshLead?.channel ?? "form",
+            staged_session_id: session.sessionId,
+            staged_tier: args.tier,
+            staged_frequency: args.frequency,
+          });
+          return { ...decision, url, sessionId: session.sessionId };
         } catch (e) {
           return { status: "error", message: e instanceof Error ? e.message : String(e) };
         }
@@ -875,4 +1061,36 @@ export function buildTools(ctx: ToolContext) {
       execute: async (args) => runRaiseEscalation(ctx, args),
     }),
   };
+
+  return withToolLogging(tools, ctx.leadId);
+}
+
+// Emit one structured JSON line per tool call (todo 11) without rewriting every
+// tool: wrap each execute() with timing + status + error capture. Typed loosely
+// inside (the AI SDK Tool generic is preserved on the returned object).
+function withToolLogging<T extends object>(tools: T, leadId: string): T {
+  const record = tools as Record<string, { execute?: (...a: unknown[]) => Promise<unknown> }>;
+  for (const action of Object.keys(record)) {
+    const t = record[action]!;
+    const inner = t.execute;
+    if (typeof inner !== "function") continue;
+    t.execute = async (...args: unknown[]) => {
+      const start = Date.now();
+      try {
+        const result = await inner(...args);
+        logEvent({ leadId, action, status: "ok", latency_ms: Date.now() - start });
+        return result;
+      } catch (e) {
+        logEvent({
+          leadId,
+          action,
+          status: "error",
+          latency_ms: Date.now() - start,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        throw e;
+      }
+    };
+  }
+  return tools;
 }
