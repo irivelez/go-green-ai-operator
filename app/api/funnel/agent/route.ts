@@ -17,6 +17,7 @@ import { buildTools, type ToolContext } from "@/src/agent-tools";
 import { upsertLead, getLead } from "@/src/store";
 import { Body, agentSystemPrompt } from "@/src/funnel-agent-prompt";
 import { isAllowedPhoto } from "@/src/vision";
+import { checkFunnelRateLimit, clientIp } from "@/src/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,17 @@ export async function POST(req: NextRequest) {
     });
   }
   const { messages, leadId, language, photos, address, intent } = parsed.data;
+
+  // PUBLIC endpoint → rate-limit before any store write or LLM call (cost/abuse
+  // guard for Meta-ad traffic). No-op when Upstash isn't configured (local dev).
+  // go-live G3.
+  const rl = await checkFunnelRateLimit(clientIp(req.headers), leadId);
+  if (!rl.ok) {
+    return new Response(JSON.stringify({ error: "rate_limited", scope: rl.scope }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": String(rl.retryAfterSec) },
+    });
+  }
 
   // PRODUCTION GUARD: no silent keyword fallback in prod. A deployed agent with no key
   // is a defect, not a degraded mode — fail loudly so it's caught, never shipped dumb.
