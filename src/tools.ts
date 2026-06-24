@@ -51,11 +51,20 @@ export async function tool_book_evaluation(lead: Lead, slotISO: string): Promise
     inbound_text: "", address: lead.address,
   } as CaseState);
   if (deny) return { ok: false, reason: deny };
+  // V2 money gate (cross-model review B1): BOOKED now means a PAID booking — the
+  // dashboard, KPIs, and recurring spine all treat it as money-collected. Read the
+  // CURRENT lead status (the passed-in copy may be stale) and refuse to write BOOKED
+  // unless the lead is already PAID/BOOKED. This closes the legacy-operator path that
+  // wrote BOOKED with no payment.
+  const fresh = await getLead(lead.lead_id);
+  if (!fresh || (fresh.status !== "PAID" && fresh.status !== "BOOKED")) {
+    return { ok: false, reason: "payment_required: booking refused until the lead is paid" };
+  }
   if (await actionSeen(lead.lead_id, "book", slotISO)) {
     return { ok: false, reason: "idempotent: already booked this slot" };
   }
   const updated = await upsertLead({
-    lead_id: lead.lead_id, channel: lead.channel, status: "Scheduled", visit_at: slotISO,
+    lead_id: lead.lead_id, channel: lead.channel, status: "BOOKED", visit_at: slotISO,
   });
   return { ok: true, lead: updated };
 }
@@ -65,7 +74,8 @@ export async function tool_create_work_order(lead_id: string): Promise<Lead | { 
   if (!lead) return { error: "lead not found" };
   if (!lead.visit_at) return { error: "no booked visit — cannot create work order" };
   return upsertLead({
-    lead_id, channel: lead.channel, status: "Work Order Created",
+    lead_id, channel: lead.channel, status: "BOOKED",
+    work_order_created_at: new Date().toISOString(),
     work_order: {
       address: lead.address, zone: lead.zone, frequency: lead.desired_frequency,
       package: lead.suggested_package, price_range: lead.price_range,
@@ -76,7 +86,8 @@ export async function tool_create_work_order(lead_id: string): Promise<Lead | { 
 
 export async function tool_raise_escalation(lead_id: string, channel: Lead["channel"], reason: string, brief: string): Promise<Lead> {
   const lead = await upsertLead({
-    lead_id, channel, status: "Needs Human Review",
+    lead_id, channel, status: "ESCALATED",
+    escalated_at: new Date().toISOString(),
     escalation_reason: reason, internal_notes: brief,
   });
   // Fire-and-forget owner alert via Composio → Gmail. Never blocks or throws into the flow;

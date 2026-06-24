@@ -187,7 +187,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   trace.push(`geo: ${geo.reason}; score=${scored.score} (${scored.reasons.join("; ")})`);
 
   if (scored.score === "C" && geo.in_area === false && (lead.address || zip)) {
-    lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, lead_score: "C", status: "Not a Fit", ai_recommendation: geo.reason });
+    lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, lead_score: "C", status: "DEAD", ai_recommendation: geo.reason });
     decision.intent = "decline"; decision.stage = lead.status;
     const reply = await composeReply({ kind: "out_of_area", lang, lead, userText: text, decision });
     return { reply, lead, decision };
@@ -203,7 +203,7 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   if (missing.length > 0) {
     lead = await upsertLead({
       lead_id: lead.lead_id, channel: lead.channel, lead_score: scored.score, zone: geo.zone,
-      status: lead.address || lead.desired_frequency || lead.photos.length ? "Waiting for Info" : "New Lead",
+      status: "ACTIVE",
     });
     decision.intent = "collect_info"; decision.stage = lead.status;
     trace.push(`missing: ${missing.join(", ")} → ${lead.status}`);
@@ -232,19 +232,29 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
     return { reply, lead, decision };
   }
 
+  // Re-qualification must NOT downgrade a PAID/BOOKED lead back to ACTIVE — that
+  // clobber would silently undo the payment state and re-block booking (cross-model
+  // review B1). Preserve the paid/booked status; only an unqualified lead is ACTIVE.
+  const qualifyStatus =
+    prev?.status === "PAID" || prev?.status === "BOOKED" ? prev.status : "ACTIVE";
   lead = await upsertLead({
     lead_id: lead.lead_id, channel: lead.channel, lead_score: "A", zone: geo.zone,
     vision_assessment: vision as unknown as Record<string, unknown>,
     suggested_package: pkg, price_range: { low: range.low, high: range.high },
     ai_recommendation: `${lead.desired_frequency} ${pkg} maintenance${vision.cleanup_required ? " (initial cleanup required first — separate quote)" : ""}.`,
-    status: "AI Qualified",
+    status: qualifyStatus,
   });
 
   const slots = nextSlots(new Date());
   decision.slots = slots;
 
-  // 5) Booking: if they're confirming after slots were offered, book it.
-  const wasOffered = prev?.status === "Ready to Schedule" || prev?.status === "AI Qualified";
+  // V1 legacy path: "slots offered" = slots_offered_at marker on an ACTIVE or
+  // PAID lead. The V2 money gate now lives INSIDE tool_book_evaluation (cross-model
+  // review B1): BOOKED means a paid booking, so an unpaid lead's book attempt is
+  // refused (payment_required) and we fall through to re-offering slots; a PAID
+  // lead that confirms gets booked.
+  const wasOffered =
+    (prev?.status === "ACTIVE" || prev?.status === "PAID") && prev?.slots_offered_at != null;
   if (wasOffered && confirmsBooking(text)) {
     const slot = slots[chosenSlotIndex(text)]!;
     const booked = await tool_book_evaluation({ ...lead, address: lead.address } as never, slot);
@@ -259,9 +269,9 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   }
 
   // Otherwise, offer two slots.
-  lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, status: "Ready to Schedule" });
+  lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, status: "ACTIVE", slots_offered_at: new Date().toISOString() });
   decision.intent = "offer_slots"; decision.stage = lead.status;
-  trace.push(`offered slots → Ready to Schedule`);
+  trace.push(`offered slots → ACTIVE (slots_offered_at)`);
   const reply = await composeReply({ kind: "offer_slots", lang, lead, slots, range, pkg, vision, userText: text, decision });
   return { reply, lead, decision };
 }
