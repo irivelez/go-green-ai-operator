@@ -121,8 +121,8 @@ class MemoryBackend implements Backend {
     for (const l of seed) this.leads.set(l.lead_id, structuredClone(l));
   }
   async getLead(id: string): Promise<Lead | undefined> {
-    const l = this.leads.get(id);
-    return l ? structuredClone(l) : undefined;
+    const lead = this.leads.get(id);
+    return lead ? structuredClone(lead) : undefined;
   }
   async putLead(lead: Lead): Promise<void> {
     this.leads.set(lead.lead_id, structuredClone(lead));

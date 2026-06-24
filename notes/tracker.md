@@ -45,7 +45,7 @@ gate names the full path set explicitly (recon Step 1).
 | 4 | Dead code, 2nd pass | done | | 1 orphan: `type CheckoutResult` import in stripe.ts — orphaned by Phase-1 `confirmPayment` removal (`createSubscriptionCheckout` returns `{url,sessionId}`, not `CheckoutResult`). Type def kept (still used at contract.ts:512). Gate green. |
 | 5 | Identify variables | done | | notes/renames.md — 9 candidates (V1-V9), all function-local; idiomatic shorts (i/j, sw/ne, regex m, date d/s, seed t) left |
 | 6 | Propose variable names | done | | notes/renames.md Phase 6 — all 9 approved; collision/misdirection/boundary cleared (`priced` string-literals & `contact` prompt-string are not identifiers) |
-| 7 | Apply variable renames | pending | | trifecta |
+| 7 | Apply variable renames | done | | 9 renames, symmetric diff (5/5,5/5,7/7,2/2,5/5,2/2,4/4). Trifecta clean: gate green, seed-loop `l` + `status:"priced"` strings + `:212` prompt-string all intact (over-reach guards). |
 | 8 | Identify functions/params | pending | | notes-only |
 | 9 | Propose function names | pending | | notes-only |
 | 10 | Apply function renames | pending | | trifecta |

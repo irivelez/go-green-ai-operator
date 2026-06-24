@@ -140,11 +140,11 @@ export async function createSubscriptionCheckout(
   // Defense in depth: open-ended add-ons MUST NOT reach Stripe.
   // (The funnel's selection UI is the primary gate; this is the failsafe.)
   const resolved = input.selectedAddOnIds.map((id) => {
-    const a = addOnById(id);
-    if (!a) throw new Error(`Unknown add-on id: ${id}`);
-    return a;
+    const addOn = addOnById(id);
+    if (!addOn) throw new Error(`Unknown add-on id: ${id}`);
+    return addOn;
   });
-  const openEnded = resolved.filter((a) => a.kind === "open_ended");
+  const openEnded = resolved.filter((addOn) => addOn.kind === "open_ended");
   if (openEnded.length > 0) {
     throw new Error(
       `Open-ended add-ons cannot be auto-charged (BUILD-DECISIONS §B1): ${openEnded

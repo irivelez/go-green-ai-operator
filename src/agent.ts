@@ -343,10 +343,10 @@ function templateAsk(field: GatingField | "ready", language: "en" | "es", state:
         ? "Gracias. ¿Con qué frecuencia le gustaría el servicio: semanal, cada dos semanas o mensual?"
         : "Thank you. How often would you like service: weekly, biweekly, or monthly?";
     case "tier": {
-      const t = PRICE_BOOK[state.recommendedTier ?? "signature"];
+      const tierSpec = PRICE_BOOK[state.recommendedTier ?? "signature"];
       return es
-        ? `Según lo que vemos, le recomendamos el plan ${t.name} ($${t.perVisit} por visita). ¿Le gustaría confirmar este plan para continuar?`
-        : `Based on what we see, we'd recommend ${t.name} ($${t.perVisit} per visit). Would you like to confirm this plan to continue?`;
+        ? `Según lo que vemos, le recomendamos el plan ${tierSpec.name} ($${tierSpec.perVisit} por visita). ¿Le gustaría confirmar este plan para continuar?`
+        : `Based on what we see, we'd recommend ${tierSpec.name} ($${tierSpec.perVisit} per visit). Would you like to confirm this plan to continue?`;
     }
     case "identity":
       return es
@@ -444,8 +444,8 @@ export async function runFunnelAgent(input: FunnelAgentInput): Promise<FunnelAge
       brief: llmEsc.brief,
       autoChargeBlocked: true,
     };
-    const cc = collectContact(funnelState);
-    if (cc) flag.capturedContact = cc;
+    const contact = collectContact(funnelState);
+    if (contact) flag.capturedContact = contact;
     return {
       reply: turn.reply,
       nextStep: "human_review",

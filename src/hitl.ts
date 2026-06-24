@@ -112,8 +112,8 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
     const slot = nextSlots()[0]!;
     const booked = await tool_book_evaluation({ ...lead, address: lead.address }, slot);
     if (booked.ok) {
-      const wo = await tool_create_work_order(id);
-      const updated = "lead_id" in wo ? (wo as Lead) : lead;
+      const workOrder = await tool_create_work_order(id);
+      const updated = "lead_id" in workOrder ? (workOrder as Lead) : lead;
       const after = await upsertLead({
         lead_id: id, channel: updated.channel,
         internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — booked.`,

@@ -107,16 +107,16 @@ export function pricePerVisit(input: {
  * is now a separately quoted add-on through priceCart, not folded into the band.
  */
 export function quoteRange(c: PricingCase): PriceRange {
-  const r = pricePerVisit({
+  const priced = pricePerVisit({
     measured_area_sqft: c.measured_area_sqft,
     slope_tier: c.slope_tier,
     frequency: c.frequency,
   });
   return {
-    low: r.perVisit,
-    high: r.perVisit,
-    currency: r.currency,
-    assumptions: r.assumptions,
+    low: priced.perVisit,
+    high: priced.perVisit,
+    currency: priced.currency,
+    assumptions: priced.assumptions,
     confidence: 0.85,
     covered: true,
   };

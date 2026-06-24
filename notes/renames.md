@@ -44,3 +44,10 @@ assigned to frozen fields (`per_visit_price`, etc.) but the local *name* is free
 Critic note: the rename set is deliberately small + scope-local (smallest blast radius). The Phase-7 trifecta
 (no-misdirection grep on the old token, over-reach grep on must-stay siblings, gate + symmetric diff) is the
 verification; a separate critic sub-agent is disproportionate for 9 single-function locals under a strict typechecker.
+
+## Phase 7 — variable APPLY (done)
+
+All 9 applied, gate green (tsc 0, 17/17). **Symmetric diff** confirms pure renames: agent-tools 5/5, agent 5/5,
+funnel-prompt 7/7, hitl 2/2, pricing 5/5, store 2/2, stripe 4/4. Over-reach guards verified intact: `store.ts:121`
+seed-loop `for (const l of seed)` (the OTHER `l`), both `status: "priced"` string-literals, the `agent.ts:212`
+"their contact details" prompt string.

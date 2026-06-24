@@ -33,11 +33,11 @@ const FREQ_ORDER: Frequency[] = ["weekly", "biweekly", "monthly"];
 
 function tierBlock(): string {
   return TIER_ORDER.map((id) => {
-    const t = PRICE_BOOK[id];
-    const includes = t.includes.slice(0, 4).join("; ");
-    const notIncluded = t.notIncluded.slice(0, 3).join(", ");
+    const tierSpec = PRICE_BOOK[id];
+    const includes = tierSpec.includes.slice(0, 4).join("; ");
+    const notIncluded = tierSpec.notIncluded.slice(0, 3).join(", ");
     return [
-      `- **${t.name}** (id: ${t.id}) — $${t.perVisit} per visit, flat. ${t.blurb}`,
+      `- **${tierSpec.name}** (id: ${tierSpec.id}) — $${tierSpec.perVisit} per visit, flat. ${tierSpec.blurb}`,
       `    Includes e.g.: ${includes}.`,
       `    NOT included (always a separate quoted item): ${notIncluded}, …`,
     ].join("\n");
@@ -93,9 +93,9 @@ function openEndedAddOnBlock(): string {
 }
 
 function cleanupGatingLine(): string {
-  const c = addOnById(CLEANUP_GATING_ADDON_ID);
-  if (!c) return "";
-  return `When the photos clearly show a neglected yard, a one-time cleanup (${c.name} — $${c.priceStartingAt} ${c.unit}) is required in the cart before recurring service can start. Frame it as getting the garden to a maintainable baseline, never as a penalty.`;
+  const cleanup = addOnById(CLEANUP_GATING_ADDON_ID);
+  if (!cleanup) return "";
+  return `When the photos clearly show a neglected yard, a one-time cleanup (${cleanup.name} — $${cleanup.priceStartingAt} ${cleanup.unit}) is required in the cart before recurring service can start. Frame it as getting the garden to a maintainable baseline, never as a penalty.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

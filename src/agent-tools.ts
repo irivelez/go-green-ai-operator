@@ -640,7 +640,7 @@ export async function runComputeExactPrice(
         "Confirm the maintained area on the map first — the price is derived from the measured sqft, not estimated.",
     };
   }
-  const r = pricePerVisit({
+  const priced = pricePerVisit({
     measured_area_sqft: sqft,
     slope_tier: lead?.slope_tier ?? "flat",
     frequency: args.frequency,
@@ -651,15 +651,15 @@ export async function runComputeExactPrice(
   await upsertLead({
     lead_id: ctx.leadId,
     channel: lead?.channel ?? "form",
-    per_visit_price: r.perVisit,
-    monthly_price: r.monthly,
+    per_visit_price: priced.perVisit,
+    monthly_price: priced.monthly,
     suggested_package: spec.name,
     desired_frequency: args.frequency,
   });
   return {
     status: "priced",
-    perVisit: r.perVisit,
-    monthly: r.monthly,
+    perVisit: priced.perVisit,
+    monthly: priced.monthly,
     tier_name: spec.name,
     tier_inclusions: spec.includes.slice(0, MAX_TIER_INCLUDES),
     currency: "USD",
