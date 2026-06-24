@@ -21,7 +21,7 @@ import { priceCart, pricePerVisit } from "./pricing";
 import { analyzeYardPhotos, isAllowedPhoto } from "./vision";
 import { availableSlots, bookSlot } from "./scheduler";
 import { createSubscriptionCheckout } from "./stripe";
-import { upsertLead, getLead } from "./store";
+import { upsertLead, getLead, type LeadStatus } from "./store";
 import {
   validateAddress,
   autoMeasureRoofBbox,
@@ -52,7 +52,7 @@ const TierEnum = z.enum(["essential", "signature", "estate"]);
 const FrequencyEnum = z.enum(["weekly", "biweekly", "monthly"]);
 
 // Lead is "paid" once the Stripe webhook (stripe.ts) advances it past qualification.
-const PAID_STATES = new Set(["Ready to Schedule", "Scheduled", "Work Order Created"]);
+const PAID_STATES = new Set<LeadStatus>(["Ready to Schedule", "Scheduled", "Work Order Created"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // qualify_lead
@@ -67,9 +67,15 @@ export interface QualifyResult {
   escalate: boolean;
 }
 
+const QualifyArgsSchema = z.object({
+  address: z.string().optional().describe("Full service address including ZIP if known"),
+  frequency: FrequencyEnum.optional().describe("Desired service frequency"),
+  hasPhotos: z.boolean().optional().describe("Whether the customer has provided yard photos"),
+});
+
 export async function runQualify(
   ctx: ToolContext,
-  args: { address?: string; frequency?: string; hasPhotos?: boolean },
+  args: z.infer<typeof QualifyArgsSchema>,
 ): Promise<QualifyResult> {
   const geo = geoQualify({ address: args.address });
   const score = scoreLead(
@@ -122,9 +128,14 @@ export interface RecommendTierResult {
 // How many PRICE_BOOK inclusions to surface (recommend card + work order).
 const MAX_TIER_INCLUDES = 6;
 
+const RecommendTierArgsSchema = z.object({
+  tier: TierEnum,
+  reason: z.string().describe("Why this tier fits, one warm sentence"),
+});
+
 export async function runRecommendTier(
   ctx: ToolContext,
-  args: { tier: Tier; reason: string },
+  args: z.infer<typeof RecommendTierArgsSchema>,
 ): Promise<RecommendTierResult> {
   const spec = PRICE_BOOK[args.tier];
   const existing = await getLead(ctx.leadId);
@@ -154,9 +165,15 @@ export async function runRecommendTier(
 // compute_pricing — all numbers from priceCart; unknown id → structured error
 // ─────────────────────────────────────────────────────────────────────────────
 
+const ComputePricingArgsSchema = z.object({
+  tier: TierEnum,
+  frequency: FrequencyEnum,
+  addOnIds: z.array(z.string()).default([]).describe("Add-on ids the customer selected"),
+});
+
 export async function runComputePricing(
   _ctx: ToolContext,
-  args: { tier: Tier; frequency: Frequency; addOnIds: string[] },
+  args: z.infer<typeof ComputePricingArgsSchema>,
 ): Promise<PricingResult | { error: string }> {
   // Marked async for uniform run* handler shape. Pure compute — does not touch
   // the store, so there is no await inside. Callers always await.
@@ -172,37 +189,38 @@ export async function runComputePricing(
 // NEVER charges. With a Stripe key the tool's execute() stages a Checkout URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ProposeCheckoutResult {
-  status:
-    | "missing_address"
-    | "missing_photos"
-    | "error"
-    | "checkout_unavailable_dev"
-    | "ready";
-  message?: string;
-  amount?: number; // first charge (monthly recurring + fixed add-ons)
-  monthlyRecurring?: number;
-  currency?: "USD";
-  url?: string; // Stripe Checkout URL — only when a key is configured
-  sessionId?: string;
-  fixedAddOnIds?: string[];
-  // Measured area×slope per-visit USD when the lead has been measured. Forwarded
-  // to createSubscriptionCheckout so Stripe charges THIS number (review blocker
-  // A) — the same one shown on ExactPriceCard. Undefined → legacy flat path.
-  measuredPerVisit?: number;
-}
+export type ProposeCheckoutResult =
+  | { status: "missing_address"; message: string }
+  | { status: "missing_photos"; message: string }
+  | { status: "error"; message: string }
+  | {
+      status: "checkout_unavailable_dev" | "ready";
+      amount: number; // first charge (monthly recurring + fixed add-ons)
+      monthlyRecurring: number;
+      currency: "USD";
+      fixedAddOnIds: string[];
+      // Measured area×slope per-visit USD when the lead has been measured.
+      // Forwarded to createSubscriptionCheckout so Stripe charges THIS number
+      // (review blocker A) — the same one shown on ExactPriceCard. Undefined →
+      // legacy flat path.
+      measuredPerVisit?: number;
+      url?: string; // Stripe Checkout URL — only when a key is configured
+      sessionId?: string;
+    };
+
+const ProposeCheckoutArgsSchema = z.object({
+  tier: TierEnum,
+  frequency: FrequencyEnum,
+  addOnIds: z.array(z.string()).default([]),
+  name: z.string(),
+  email: z.string(),
+  phone: z.string().default(""),
+  address: z.string(),
+});
 
 export async function runProposeCheckout(
   ctx: ToolContext,
-  args: {
-    tier: Tier;
-    frequency: Frequency;
-    addOnIds: string[];
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-  },
+  args: z.infer<typeof ProposeCheckoutArgsSchema>,
 ): Promise<ProposeCheckoutResult> {
   if (!args.address || !args.address.trim()) {
     return { status: "missing_address", message: "No scheduling without a confirmed address." };
@@ -265,6 +283,8 @@ export async function runProposeCheckout(
 // offer_slots
 // ─────────────────────────────────────────────────────────────────────────────
 
+const OfferSlotsArgsSchema = z.object({});
+
 export async function runOfferSlots(ctx: ToolContext): Promise<SlotOffer[]> {
   // Async for uniform run* shape; availableSlots does not touch the store.
   return availableSlots(ctx.leadId);
@@ -280,9 +300,11 @@ export interface ConfirmBookingResult {
   message?: string;
 }
 
+const ConfirmBookingArgsSchema = z.object({ slotId: z.string() });
+
 export async function runConfirmBooking(
   ctx: ToolContext,
-  args: { slotId: string },
+  args: z.infer<typeof ConfirmBookingArgsSchema>,
 ): Promise<ConfirmBookingResult> {
   const lead = await getLead(ctx.leadId);
   if (!lead) return { status: "lead_missing", message: "Lead not found." };
@@ -356,9 +378,16 @@ export interface ValidateAddressToolResult {
   reason?: string;
 }
 
+const ValidateAddressArgsSchema = z.object({
+  addressLines: z.array(z.string()).describe("Street address line(s), e.g. ['123 Main St']"),
+  locality: z.string().describe("City, e.g. 'San Francisco'"),
+  adminArea: z.string().describe("State, e.g. 'CA'"),
+  postalCode: z.string().describe("ZIP code, e.g. '94110'"),
+});
+
 export async function runValidateAddress(
   ctx: ToolContext,
-  args: { addressLines: string[]; locality: string; adminArea: string; postalCode: string },
+  args: z.infer<typeof ValidateAddressArgsSchema>,
 ): Promise<ValidateAddressToolResult> {
   const res = await validateAddress(args);
 
@@ -446,9 +475,14 @@ export interface MeasurePropertyResult {
   max_grade_pct: number | null;
 }
 
+const MeasurePropertyArgsSchema = z.object({
+  lat: z.number().describe("Rooftop latitude from validate_address"),
+  lng: z.number().describe("Rooftop longitude from validate_address"),
+});
+
 export async function runMeasureProperty(
   ctx: ToolContext,
-  args: { lat: number; lng: number },
+  args: z.infer<typeof MeasurePropertyArgsSchema>,
 ): Promise<MeasurePropertyResult> {
   const leadForParcel = await getLead(ctx.leadId);
   const lat = typeof leadForParcel?.lat === "number" ? leadForParcel.lat : args.lat;
@@ -549,9 +583,15 @@ const SLOPE_RAISE: Record<"flat" | "moderate", "moderate" | "steep"> = {
   moderate: "steep",
 };
 
+const ConfirmAreaArgsSchema = z.object({
+  path: z
+    .array(z.object({ lat: z.number(), lng: z.number() }))
+    .describe("Polygon ring (unclosed); >5 points → treated as customer_draw"),
+});
+
 export async function runConfirmArea(
   ctx: ToolContext,
-  args: { path: { lat: number; lng: number }[] },
+  args: z.infer<typeof ConfirmAreaArgsSchema>,
 ): Promise<ConfirmAreaResult> {
   const confirmed_sqft = computePolygonSqft(args.path);
   const existing = await getLead(ctx.leadId);
@@ -627,9 +667,11 @@ export type ComputeExactPriceResult =
       currency: "USD";
     };
 
+const ComputeExactPriceArgsSchema = z.object({ tier: TierEnum, frequency: FrequencyEnum });
+
 export async function runComputeExactPrice(
   ctx: ToolContext,
-  args: { tier: Tier; frequency: Frequency },
+  args: z.infer<typeof ComputeExactPriceArgsSchema>,
 ): Promise<ComputeExactPriceResult> {
   const lead = await getLead(ctx.leadId);
   const sqft = lead?.confirmed_sqft;
@@ -678,9 +720,15 @@ export interface RaiseEscalationResult {
   brief: string;
 }
 
+const RaiseEscalationArgsSchema = z.object({
+  primary: z.string().describe("Primary escalation reason"),
+  flags: z.array(z.string()).default([]),
+  brief: z.string().describe("Complete, self-contained handoff brief for the human reviewer"),
+});
+
 export async function runRaiseEscalation(
   ctx: ToolContext,
-  args: { primary: string; flags: string[]; brief: string },
+  args: z.infer<typeof RaiseEscalationArgsSchema>,
 ): Promise<RaiseEscalationResult> {
   const existing = await getLead(ctx.leadId);
   await upsertLead({
@@ -705,9 +753,16 @@ export async function runRaiseEscalation(
 // analyze_photos — real Claude vision; persists the assessment to the lead
 // ─────────────────────────────────────────────────────────────────────────────
 
+const AnalyzePhotosArgsSchema = z.object({
+  photoUrls: z
+    .array(z.string())
+    .optional()
+    .describe("Optional image URLs; omit to use the photos already on the lead"),
+});
+
 export async function runAnalyzePhotos(
   ctx: ToolContext,
-  args: { photoUrls?: string[] },
+  args: z.infer<typeof AnalyzePhotosArgsSchema>,
 ): Promise<VisionAssessment> {
   const existing = await getLead(ctx.leadId);
   // Prefer explicit urls; otherwise assess the photos already on the lead (the
@@ -736,99 +791,63 @@ export function buildTools(ctx: ToolContext) {
     qualify_lead: tool({
       description:
         "Qualify the lead: check the service address is in the San Francisco service area and score the lead (A/B/C). Call this once you have an address.",
-      parameters: z.object({
-        address: z.string().optional().describe("Full service address including ZIP if known"),
-        frequency: FrequencyEnum.optional().describe("Desired service frequency"),
-        hasPhotos: z.boolean().optional().describe("Whether the customer has provided yard photos"),
-      }),
+      parameters: QualifyArgsSchema,
       execute: async (args) => runQualify(ctx, args),
     }),
 
     analyze_photos: tool({
       description:
         "Analyze the customer's yard photo(s) with vision to assess size, condition, whether a one-time cleanup is required, and the recommended care tier. Call this when photos are on file (you don't need to pass the URLs — they're read from the lead).",
-      parameters: z.object({
-        photoUrls: z
-          .array(z.string())
-          .optional()
-          .describe("Optional image URLs; omit to use the photos already on the lead"),
-      }),
+      parameters: AnalyzePhotosArgsSchema,
       execute: async (args) => runAnalyzePhotos(ctx, args),
     }),
 
     recommend_tier: tool({
       description:
         "Recommend ONE care tier (essential/signature/estate) for the customer to confirm, with a short reason. Returns the authoritative pricing and all three options to display as cards.",
-      parameters: z.object({
-        tier: TierEnum,
-        reason: z.string().describe("Why this tier fits, one warm sentence"),
-      }),
+      parameters: RecommendTierArgsSchema,
       execute: async (args) => runRecommendTier(ctx, args),
     }),
 
     compute_pricing: tool({
       description:
         "Compute the exact, authoritative price for a tier + frequency + selected add-ons. Open-ended add-ons are listed separately and never charged. Always use this before checkout — never quote a number yourself.",
-      parameters: z.object({
-        tier: TierEnum,
-        frequency: FrequencyEnum,
-        addOnIds: z.array(z.string()).default([]).describe("Add-on ids the customer selected"),
-      }),
+      parameters: ComputePricingArgsSchema,
       execute: async (args) => runComputePricing(ctx, args),
     }),
 
     validate_address: tool({
       description:
         "Validate and standardize the service address via Google Address Validation. Returns VALIDATED (persisted), needs_confirm (corrected — ask the customer to confirm the suggested standardization), or unvalidatable. Without a Google key returns a graceful error — never throws.",
-      parameters: z.object({
-        addressLines: z.array(z.string()).describe("Street address line(s), e.g. ['123 Main St']"),
-        locality: z.string().describe("City, e.g. 'San Francisco'"),
-        adminArea: z.string().describe("State, e.g. 'CA'"),
-        postalCode: z.string().describe("ZIP code, e.g. '94110'"),
-      }),
+      parameters: ValidateAddressArgsSchema,
       execute: async (args) => runValidateAddress(ctx, args),
     }),
 
     measure_property: tool({
       description:
         "Measure the property from the SF parcel map (DataSF): the real lot polygon for one-tap confirm, plus Elevation API slope tier. The validated address parts are read from the lead automatically — just pass lat/lng (they drive slope). Returns shared_multi_unit=true for a stacked condo (ambiguous ownership — you MUST raise_escalation, do NOT price). Falls back to a Solar+heuristic estimate when the address has no parcel match (single-family); the customer still confirms on the map. Persists estimated_sqft + slope on the lead.",
-      parameters: z.object({
-        lat: z.number().describe("Rooftop latitude from validate_address"),
-        lng: z.number().describe("Rooftop longitude from validate_address"),
-      }),
+      parameters: MeasurePropertyArgsSchema,
       execute: async (args) => runMeasureProperty(ctx, args),
     }),
 
     confirm_area: tool({
       description:
         "Server re-derives the maintained area (sqft) from the customer's polygon — never trust a client-supplied number. If vision photos hinted at steep terrain and slope_tier is flat or moderate, the tier is raised one step (photo_raised). Persists confirmed_sqft + area_source + slope on the lead.",
-      parameters: z.object({
-        path: z
-          .array(z.object({ lat: z.number(), lng: z.number() }))
-          .describe("Polygon ring (unclosed); >5 points → treated as customer_draw"),
-      }),
+      parameters: ConfirmAreaArgsSchema,
       execute: async (args) => runConfirmArea(ctx, args),
     }),
 
     compute_exact_price: tool({
       description:
         "Exact per-visit + monthly price from confirmed_sqft × slope_tier (area buckets + slope multiplier). Requires confirm_area to have run — otherwise returns missing_measurement. Final price is still confirmed on the first on-site visit.",
-      parameters: z.object({ tier: TierEnum, frequency: FrequencyEnum }),
+      parameters: ComputeExactPriceArgsSchema,
       execute: async (args) => runComputeExactPrice(ctx, args),
     }),
 
     propose_checkout: tool({
       description:
         "Stage checkout for the customer to pay (first month now to lock the booking). Price derives from the lead's confirmed_sqft + slope (compute_exact_price), not the model. Requires a confirmed address and photos on file. This NEVER charges — it returns a secure Stripe Checkout link the customer clicks themselves.",
-      parameters: z.object({
-        tier: TierEnum,
-        frequency: FrequencyEnum,
-        addOnIds: z.array(z.string()).default([]),
-        name: z.string(),
-        email: z.string(),
-        phone: z.string().default(""),
-        address: z.string(),
-      }),
+      parameters: ProposeCheckoutArgsSchema,
       execute: async (args): Promise<ProposeCheckoutResult> => {
         const decision = await runProposeCheckout(ctx, args);
         if (decision.status !== "ready" || !process.env.STRIPE_SECRET_KEY) return decision;
@@ -856,25 +875,21 @@ export function buildTools(ctx: ToolContext) {
     offer_slots: tool({
       description:
         "Offer the available evaluation/first-service slots (4 windows/day, from Thursday, 14-day window). Call after payment is confirmed.",
-      parameters: z.object({}),
+      parameters: OfferSlotsArgsSchema,
       execute: async () => runOfferSlots(ctx),
     }),
 
     confirm_booking: tool({
       description:
         "Book a specific slot for the customer. Only succeeds after payment is confirmed. Idempotent — safe to retry.",
-      parameters: z.object({ slotId: z.string() }),
+      parameters: ConfirmBookingArgsSchema,
       execute: async (args) => runConfirmBooking(ctx, args),
     }),
 
     raise_escalation: tool({
       description:
         "Route this case to a human and block any auto-charge. Use for: HOA, property manager, commercial, complaint, refund/discount, legal/warranty, damage, hardscape/large install, out-of-area, extreme urgency, open-ended add-on, low photo confidence, contradictory scope, or unusable photos.",
-      parameters: z.object({
-        primary: z.string().describe("Primary escalation reason"),
-        flags: z.array(z.string()).default([]),
-        brief: z.string().describe("Complete, self-contained handoff brief for the human reviewer"),
-      }),
+      parameters: RaiseEscalationArgsSchema,
       execute: async (args) => runRaiseEscalation(ctx, args),
     }),
   };

@@ -1,5 +1,7 @@
 // Shared client types — mirror the API contract exactly.
 
+import type { WorkOrder } from "@/src/store";
+
 export type LeadStatus =
   | "New Lead"
   | "Waiting for Info"
@@ -40,7 +42,7 @@ export interface Lead {
   status: LeadStatus;
   escalation_reason?: string;
   visit_at?: string;
-  work_order?: Record<string, unknown>;
+  work_order?: WorkOrder;
   internal_notes?: string;
   created_at: string;
   first_response_at?: string;

@@ -15,10 +15,10 @@ after EPIC 4 + at the end. One logical change per commit. Update the row below a
 | 0b-iii | Prettier isolated format pass + blame-ignore | 0 | preserving | **DEFERRED** (60-file cosmetic reformat → standalone PR) |
 | 0b-iv | `.nvmrc`/engines + gate-doc collapse | 0 | preserving | **done** |
 | 4a | delete dead v1 wizard + retarget stripe URLs (DEDUP-12) | 4 | behavior-changing (dead) | **done** (−26 files; agent.ts 521→27; gate 17→16; build clean) |
-| 1a | `PAID_STATES: Set<LeadStatus>` (DEDUP-09) | 1 | preserving | pending |
-| 1b | `interface WorkOrder` (DEDUP-06) | 1 | preserving | pending |
-| 1c | `ProposeCheckoutResult` discriminated split (DEDUP-08) | 1 | preserving | pending |
-| 1d | tool Zod→z.infer + client `ToolResultMap` (DEDUP-04) | 1 | preserving | pending |
+| 1a | `PAID_STATES: Set<LeadStatus>` (DEDUP-09) | 1 | preserving | **done** |
+| 1b | `interface WorkOrder` (DEDUP-06) | 1 | preserving | **done** |
+| 1c | `ProposeCheckoutResult` discriminated split (DEDUP-08) | 1 | preserving | **done** |
+| 1d | tool Zod→z.infer + client `ToolResultMap` (DEDUP-04) | 1 | preserving | **done** |
 | 2a | `LeadDTO` derive client types (DEDUP-07) + registry-B | 2 | preserving (B relax) | pending |
 | 3a | `newWebLeadId()` (DEDUP-11) | 3 | preserving | pending |
 | 3b | `withBody`/`ownerActionRoute` route wrappers (DEDUP-03) | 3 | preserving | pending |

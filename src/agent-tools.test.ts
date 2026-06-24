@@ -152,6 +152,8 @@ console.log("\n=== S3: propose_checkout — address gate + photos gate + NEVER c
   });
   const expectAmount = monthlyFromVisit("signature", "biweekly") + 95;
   ok("photos+address present → not a gate refusal", ready.status !== "missing_address" && ready.status !== "missing_photos", JSON.stringify(ready));
+  if (ready.status === "missing_address" || ready.status === "missing_photos" || ready.status === "error")
+    throw new Error(`expected a priced result, got ${ready.status}`);
   ok("computes authoritative amount", typeof ready.amount === "number" && approxEq(ready.amount as number, expectAmount), `got ${ready.amount}`);
   ok("dev (no Stripe key) → checkout_unavailable_dev, NEVER a silent charge", ready.status === "checkout_unavailable_dev");
 }
@@ -797,6 +799,8 @@ console.log("\n=== T13: propose_checkout — charge == quote (measured area×slo
     r.status !== "missing_address" && r.status !== "missing_photos",
     JSON.stringify(r),
   );
+  if (r.status === "missing_address" || r.status === "missing_photos" || r.status === "error")
+    throw new Error(`expected a priced result, got ${r.status}`);
   ok(
     `monthlyRecurring == MEASURED (${measured.monthly}) NOT flat 648.83`,
     typeof r.monthlyRecurring === "number" && approxEq(r.monthlyRecurring, measured.monthly),
@@ -824,6 +828,8 @@ console.log("\n=== T13: propose_checkout — charge == quote (measured area×slo
     phone: "555",
     address: "123 Main St, SF 94110",
   });
+  if (r2.status === "missing_address" || r2.status === "missing_photos" || r2.status === "error")
+    throw new Error(`expected a priced result, got ${r2.status}`);
   const expectedAmount = Math.round((measured.monthly + 95) * 100) / 100;
   ok(
     `amount = MEASURED monthly + $95 = ${expectedAmount}`,
@@ -857,6 +863,8 @@ console.log("\n=== T13.b: propose_checkout — legacy back-compat: no measuremen
     phone: "555",
     address: "123 Main St, SF 94110",
   });
+  if (r.status === "missing_address" || r.status === "missing_photos" || r.status === "error")
+    throw new Error(`expected a priced result, got ${r.status}`);
   const flat = monthlyFromVisit("signature", "biweekly"); // 648.83
   ok(
     "monthlyRecurring falls back to flat 648.83",

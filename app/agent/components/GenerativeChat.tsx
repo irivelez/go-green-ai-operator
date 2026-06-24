@@ -99,6 +99,29 @@ interface ToolPart {
   result?: unknown;
 }
 
+// One typed seam for the tool→card dispatch: maps each tool name to the result
+// shape its run* handler returns. `toolResult` narrows `tp.result` (typed
+// `unknown` off the wire) to that shape, replacing the blind `res as XResult`
+// casts in renderTool with a single key-checked cast point.
+type ToolResultMap = {
+  qualify_lead: QualifyResult;
+  analyze_photos: VisionAssessment;
+  recommend_tier: RecommendTierResult;
+  compute_pricing: PricingResult | { error: string };
+  propose_checkout: ProposeCheckoutResult;
+  offer_slots: SlotOffer[];
+  confirm_booking: ConfirmBookingResult;
+  raise_escalation: RaiseEscalationResult;
+  validate_address: ValidateAddressToolResult;
+  measure_property: MeasurePropertyResult;
+  confirm_area: ConfirmAreaResult;
+  compute_exact_price: ComputeExactPriceResult;
+};
+
+function toolResult<K extends keyof ToolResultMap>(tp: ToolPart, _k: K): ToolResultMap[K] {
+  return tp.result as ToolResultMap[K];
+}
+
 function toolPartsOf(m: Message): ToolPart[] {
   const parts = (m as { parts?: Array<{ type: string; toolInvocation?: ToolPart }> }).parts;
   if (parts) {
@@ -205,9 +228,9 @@ export function GenerativeChat({ language }: { language: Lang }) {
     const res = tp.result;
     switch (tp.toolName) {
       case "qualify_lead":
-        return <QualifyCard key={key} lang={language} r={res as QualifyResult} />;
+        return <QualifyCard key={key} lang={language} r={toolResult(tp, "qualify_lead")} />;
       case "analyze_photos": {
-        const v = res as VisionAssessment;
+        const v = toolResult(tp, "analyze_photos");
         return (
           <TraceChip
             key={key}
@@ -226,26 +249,26 @@ export function GenerativeChat({ language }: { language: Lang }) {
           <TierOptionsCard
             key={key}
             lang={language}
-            r={res as RecommendTierResult}
+            r={toolResult(tp, "recommend_tier")}
             onChoose={(tier: Tier) => {
-              const name = (res as RecommendTierResult).options.find((o) => o.tier === tier)?.name ?? tier;
+              const name = toolResult(tp, "recommend_tier").options.find((o) => o.tier === tier)?.name ?? tier;
               send(c.chooseTier(name));
             }}
           />
         );
       case "compute_pricing": {
-        const p = res as PricingResult | { error: string };
+        const p = toolResult(tp, "compute_pricing");
         if ("error" in p) return null;
         return <QuoteCard key={key} lang={language} p={p} />;
       }
       case "propose_checkout":
-        return <CheckoutCard key={key} lang={language} r={res as ProposeCheckoutResult} />;
+        return <CheckoutCard key={key} lang={language} r={toolResult(tp, "propose_checkout")} />;
       case "offer_slots":
         return (
           <SlotPickerCard
             key={key}
             lang={language}
-            slots={res as SlotOffer[]}
+            slots={toolResult(tp, "offer_slots")}
             onPick={(s: SlotOffer) => {
               const when = `${s.date} ${s.startTime.slice(11, 16)}`;
               send(c.bookSlot(when, s.slotId));
@@ -253,11 +276,11 @@ export function GenerativeChat({ language }: { language: Lang }) {
           />
         );
       case "confirm_booking":
-        return <ConfirmationCard key={key} lang={language} r={res as ConfirmBookingResult} />;
+        return <ConfirmationCard key={key} lang={language} r={toolResult(tp, "confirm_booking")} />;
       case "raise_escalation":
-        return <EscalationCard key={key} lang={language} r={res as RaiseEscalationResult} />;
+        return <EscalationCard key={key} lang={language} r={toolResult(tp, "raise_escalation")} />;
       case "validate_address": {
-        const r = res as ValidateAddressToolResult;
+        const r = toolResult(tp, "validate_address");
         return (
           <AddressConfirmCard
             key={key}
@@ -268,7 +291,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "measure_property": {
-        const r = res as MeasurePropertyResult;
+        const r = toolResult(tp, "measure_property");
         // Center the satellite preview on the real parcel ring's centroid when we
         // have one (DataSF outline); fall back to SF center for the blank-draw path.
         const center: LatLng =
@@ -318,7 +341,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "confirm_area": {
-        const r = res as ConfirmAreaResult;
+        const r = toolResult(tp, "confirm_area");
         if (r.status === "area_out_of_range") return null;
         return (
           <div
@@ -331,7 +354,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "compute_exact_price":
-        return <ExactPriceCard key={key} lang={language} result={res as ComputeExactPriceResult} />;
+        return <ExactPriceCard key={key} lang={language} result={toolResult(tp, "compute_exact_price")} />;
       default:
         return null;
     }

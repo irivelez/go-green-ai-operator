@@ -39,6 +39,24 @@ export type LeadStatus =
   | "Ready to Schedule" | "Scheduled" | "Work Order Created"
   | "Needs Human Review" | "Not a Fit" | "Lost / No Response";
 
+// Crew/booking handoff payload persisted on Lead.work_order. All keys OPTIONAL —
+// this is the union of every write site (confirm_booking, calendar handoff,
+// tools.ts work-order creation, seed fixtures) and each writes only its subset.
+export interface WorkOrder {
+  slotId?: string;
+  date?: string;
+  window?: string;
+  crewSize?: number;
+  calendar_event_id?: string;
+  address?: string;
+  zone?: string | null;
+  frequency?: string;
+  package?: string;
+  price_range?: { low: number; high: number };
+  visit_at?: string;
+  notes?: string;
+}
+
 export interface LeadEvent {
   ts: string;
   actor: "agent" | "owner" | "system";
@@ -77,7 +95,7 @@ export interface Lead {
   status: LeadStatus;
   escalation_reason?: string;
   visit_at?: string;
-  work_order?: Record<string, unknown>;
+  work_order?: WorkOrder;
   internal_notes?: string;
   created_at: string;
   first_response_at?: string;
