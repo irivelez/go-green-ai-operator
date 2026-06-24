@@ -21,7 +21,7 @@ export interface Kpis {
 }
 
 const VISITS_PER_MONTH: Record<string, number> = { weekly: 4.33, biweekly: 2.17, monthly: 1 };
-const ACTIVE = new Set(["AI Qualified", "Ready to Schedule", "Scheduled", "Work Order Created"]);
+const NON_TERMINAL_STATUSES = new Set(["ACTIVE", "PAID", "BOOKED"]);
 
 export function computeKpis(leads: Lead[]): Kpis {
   const byStage: Record<string, number> = {};
@@ -41,29 +41,42 @@ export function computeKpis(leads: Lead[]): Kpis {
 
   let potentialMonthlyRevenue = 0;
   for (const l of leads) {
-    if (l.price_range && l.desired_frequency && ACTIVE.has(l.status)) {
+    if (l.price_range && l.desired_frequency && NON_TERMINAL_STATUSES.has(l.status)) {
       const mid = (l.price_range.low + l.price_range.high) / 2;
       potentialMonthlyRevenue += mid * (VISITS_PER_MONTH[l.desired_frequency] ?? 1);
     }
   }
 
-  const needsReview = byStage["Needs Human Review"] ?? 0;
+  const needsReview = byStage["ESCALATED"] ?? 0;
   const total = leads.length;
+
+  // V1-dashboard KPIs derived from canonical status + additive timestamp
+  // markers: readyToSchedule = ACTIVE+slots_offered_at; BOOKED splits into
+  // scheduled vs workOrders by work_order_created_at.
+  const readyToSchedule = leads.filter(
+    (l) => l.status === "ACTIVE" && l.slots_offered_at != null,
+  ).length;
+  const scheduled = leads.filter(
+    (l) => l.status === "BOOKED" && l.work_order_created_at == null,
+  ).length;
+  const workOrders = leads.filter(
+    (l) => l.status === "BOOKED" && l.work_order_created_at != null,
+  ).length;
 
   return {
     total,
     byStage,
     newToday,
     qualifiedA: leads.filter((l) => l.lead_score === "A").length,
-    readyToSchedule: byStage["Ready to Schedule"] ?? 0,
-    scheduled: byStage["Scheduled"] ?? 0,
-    workOrders: byStage["Work Order Created"] ?? 0,
+    readyToSchedule,
+    scheduled,
+    workOrders,
     needsReview,
-    notFit: byStage["Not a Fit"] ?? 0,
-    lost: byStage["Lost / No Response"] ?? 0,
+    notFit: byStage["DEAD"] ?? 0,
+    lost: byStage["ABANDONED"] ?? 0,
     autonomyRatePct: total ? Math.round(((total - needsReview) / total) * 100) : 0,
     medianFirstResponseSec,
     potentialMonthlyRevenue: Math.round(potentialMonthlyRevenue),
-    activeClients: (byStage["Work Order Created"] ?? 0) + (byStage["Scheduled"] ?? 0),
+    activeClients: (byStage["BOOKED"] ?? 0) + (byStage["PAID"] ?? 0),
   };
 }
