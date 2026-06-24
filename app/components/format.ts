@@ -8,9 +8,18 @@ export function fmtSeconds(sec: number | null | undefined): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-export function fmtMoney(n: number | null | undefined): string {
+// Single money renderer. Two call-site shapes, both preserved exactly:
+//   • round: true  → dashboard KPI aggregates — `$1,234` (integer, no decimals)
+//   • default      → customer prices — `$245` / `$12.50` (0 dp if whole, else 2 dp)
+// null/NaN → "—" (only the dashboard path ever passes nullable; harmless for prices).
+export function money(n: number | null | undefined, opts?: { round?: boolean }): string {
   if (n == null || Number.isNaN(n)) return "—";
-  return `$${Math.round(n).toLocaleString("en-US")}`;
+  if (opts?.round) return `$${Math.round(n).toLocaleString("en-US")}`;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`;
+}
+
+export function fmtMoney(n: number | null | undefined): string {
+  return money(n, { round: true });
 }
 
 export function fmtRange(r?: { low: number; high: number } | null): string | null {

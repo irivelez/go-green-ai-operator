@@ -19,6 +19,7 @@ import {
   Camera,
 } from "lucide-react";
 import { PRICE_BOOK, type Tier, type SlotOffer } from "@/src/contract";
+import { money } from "@/app/components/format";
 import type {
   QualifyResult,
   RecommendTierResult,
@@ -112,8 +113,14 @@ const L = {
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
-const money = (n: number) =>
-  `$${n.toLocaleString("en-US", { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`;
+// Customer-facing time-of-day for a slot ISO, rendered in America/Los_Angeles.
+// Used by both SlotPickerCard (start–end) and ConfirmationCard (start) — byte-identical.
+const fmtSlotTime = (iso: string, lang: Lang) =>
+  new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(iso));
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -274,12 +281,6 @@ export function SlotPickerCard({
       day: "numeric",
     }).format(new Date(y!, m! - 1, d!));
   };
-  const fmtTime = (iso: string) =>
-    new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: "America/Los_Angeles",
-    }).format(new Date(iso));
   return (
     <Shell>
       <div className="border-b border-moss-100 bg-paper/40 px-4 py-2.5 font-display text-[15px] text-bark-900">
@@ -298,7 +299,7 @@ export function SlotPickerCard({
                   className="rounded-xl border border-moss-100 bg-white px-3 py-2 text-left shadow-petal transition hover:border-moss-300"
                 >
                   <div className="text-[12.5px] font-medium text-bark-900">
-                    {fmtTime(s.startTime)} – {fmtTime(s.endTime)}
+                    {fmtSlotTime(s.startTime, lang)} – {fmtSlotTime(s.endTime, lang)}
                   </div>
                   <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-moss-700/60">
                     <Users className="h-2.5 w-2.5" strokeWidth={2} />
@@ -329,7 +330,7 @@ export function ConfirmationCard({ lang, r }: { lang: Lang; r: ConfirmBookingRes
           <div className="mt-0.5 text-[12.5px] text-moss-800/80">{t.bookedSub}</div>
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-paper px-3 py-1 text-[12px] text-moss-800">
             <CalendarCheck className="h-3.5 w-3.5" strokeWidth={2} />
-            {r.slot.date} · {new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }).format(new Date(r.slot.startTime))}
+            {r.slot.date} · {fmtSlotTime(r.slot.startTime, lang)}
           </div>
         </div>
       </div>
