@@ -23,7 +23,6 @@ import {
   addOnById,
   type Tier,
   type Frequency,
-  type CheckoutResult,
 } from "./contract";
 import { upsertLead, actionSeen, getLead } from "./store";
 
