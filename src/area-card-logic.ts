@@ -7,7 +7,6 @@
 // Google Maps Polygon renders cleanly and the test can verify closure headlessly.
 
 export type LatLng = { lat: number; lng: number };
-export type RoofBbox = { sw: LatLng; ne: LatLng } | null;
 
 export function pickInitialPath(parcelRing: LatLng[]): LatLng[] {
   if (!Array.isArray(parcelRing) || parcelRing.length < 3) return [];

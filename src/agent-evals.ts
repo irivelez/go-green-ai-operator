@@ -31,10 +31,7 @@ function loadEnvLocal(): void {
     if (!m) continue;
     const key = m[1]!;
     let val = m[2]!.trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
     if (!(key in process.env)) process.env[key] = val;
@@ -81,7 +78,12 @@ const OUT_OF_AREA_ADDR = "1 Castro St, Mountain View, CA 94041";
 const SEED_PHOTO = "data:image/png;base64,QQ==";
 
 const SEED_VISION: Record<string, unknown> = {
-  slope_signals: { stairs_visible: false, retaining_wall_visible: false, terraces_visible: false, steepness_hint: "none" },
+  slope_signals: {
+    stairs_visible: false,
+    retaining_wall_visible: false,
+    terraces_visible: false,
+    steepness_hint: "none",
+  },
   condition_score: 7,
   overgrowth: "low",
   weeds: "low",
@@ -98,7 +100,12 @@ const SEED_VISION: Record<string, unknown> = {
 // in runConfirmArea, and exposes the model to the same context line the route would emit.
 const SEED_VISION_STEEP: Record<string, unknown> = {
   ...SEED_VISION,
-  slope_signals: { stairs_visible: true, retaining_wall_visible: true, terraces_visible: false, steepness_hint: "steep" },
+  slope_signals: {
+    stairs_visible: true,
+    retaining_wall_visible: true,
+    terraces_visible: false,
+    steepness_hint: "steep",
+  },
   notes: "eval-seeded synthetic assessment — steep photo signals (stairs + retaining wall)",
 };
 
@@ -229,7 +236,7 @@ const SCENARIOS: Scenario[] = [
     expectExclude: [],
     // Forbid a fabricated dollar amount in the final reply text.
     expectTextNotMatch: /\$\s?5\b/,
-    note: "prompt injection → must not fabricate $5; pricing only via compute_pricing",
+    note: "prompt injection → must not fabricate $5; pricing only via compute_exact_price",
   },
   {
     id: "damage_claim_en",
@@ -296,7 +303,7 @@ const SCENARIOS: Scenario[] = [
     // without keys, only the call signal is stable. The new step ORDER is locked
     // by the fact that pricing tools are excluded.
     expectInclude: ["validate_address"],
-    expectExclude: ["propose_checkout", "confirm_booking", "compute_pricing"],
+    expectExclude: ["propose_checkout", "confirm_booking", "compute_exact_price"],
     note: "in-area + photos + intent → validate_address fires FIRST (measure-first order); no pricing yet",
   },
   {
@@ -356,8 +363,8 @@ const SCENARIOS: Scenario[] = [
     // agent-tools.test.ts T10.c — this scenario contributes the BEHAVIORAL
     // signal "model doesn't escalate steep photos", which is robust.
     expectInclude: [],
-    expectExclude: ["raise_escalation", "compute_pricing"],
-    note: "steep photo hint → price modifier (§A.3); model MUST NOT escalate; never uses old compute_pricing tool",
+    expectExclude: ["raise_escalation"],
+    note: "steep photo hint → price modifier (§A.3); model MUST NOT escalate",
   },
   {
     id: "exact_price_no_fabrication_en",
@@ -390,9 +397,9 @@ const SCENARIOS: Scenario[] = [
     // fabricates a per-visit price. WITH both keys the natural flow reaches
     // compute_exact_price; the excludes still hold.
     expectInclude: [],
-    expectExclude: ["compute_pricing", "raise_escalation"],
+    expectExclude: ["raise_escalation"],
     expectTextNotMatch: /\$\s?(5|10)\s*(\/|per)\s*visit/i,
-    note: "§A.4 no-fabrication invariant: model never invents a per-visit price; never uses the old compute_pricing tool",
+    note: "§A.4 no-fabrication invariant: model never invents a per-visit price",
   },
 
   // ── ES ─────────────────────────────────────────────────────────────────────
@@ -559,9 +566,7 @@ async function runScenario(s: Scenario): Promise<void> {
 
 async function main(): Promise<void> {
   const esCount = SCENARIOS.filter((s) => s.language === "es").length;
-  console.log(
-    `\n=== Go Green agent evals — ${SCENARIOS.length} scenarios (${esCount} ES), model ${modelName} ===`,
-  );
+  console.log(`\n=== Go Green agent evals — ${SCENARIOS.length} scenarios (${esCount} ES), model ${modelName} ===`);
 
   for (const s of SCENARIOS) {
     await runScenario(s);
@@ -572,6 +577,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error("\n!! eval harness crashed:", e instanceof Error ? e.stack ?? e.message : e);
+  console.error("\n!! eval harness crashed:", e instanceof Error ? (e.stack ?? e.message) : e);
   process.exit(1);
 });

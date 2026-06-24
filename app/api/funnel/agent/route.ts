@@ -10,13 +10,14 @@
 // toDataStreamResponse() → consumed by useChat() on the client, which renders each
 // tool result as an interactive React component (generative UI).
 
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText, convertToCoreMessages, type Message } from "ai";
 import { buildTools, type ToolContext } from "@/src/agent-tools";
 import { upsertLead, getLead } from "@/src/store";
 import { Body, agentSystemPrompt } from "@/src/funnel-agent-prompt";
 import { isAllowedPhoto } from "@/src/vision";
+import { checkFunnelRateLimit, clientIp } from "@/src/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,14 +58,25 @@ export async function POST(req: NextRequest) {
   }
   const { messages, leadId, language, photos, address, intent } = parsed.data;
 
+  // PUBLIC endpoint → rate-limit before any store write or LLM call (cost/abuse
+  // guard for Meta-ad traffic). No-op when Upstash isn't configured (local dev).
+  // go-live G3.
+  const rl = await checkFunnelRateLimit(clientIp(req.headers), leadId);
+  if (!rl.ok) {
+    return new Response(JSON.stringify({ error: "rate_limited", scope: rl.scope }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": String(rl.retryAfterSec) },
+    });
+  }
+
   // PRODUCTION GUARD: no silent keyword fallback in prod. A deployed agent with no key
   // is a defect, not a degraded mode — fail loudly so it's caught, never shipped dumb.
   if (!process.env.ANTHROPIC_API_KEY) {
     if (process.env.NODE_ENV === "production") {
-      return new Response(
-        JSON.stringify({ error: "ANTHROPIC_API_KEY is required in production." }),
-        { status: 503, headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is required in production." }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      });
     }
     return devFallbackStream(language);
   }
@@ -77,9 +89,7 @@ export async function POST(req: NextRequest) {
   const existing = await getLead(leadId);
   const safePhotos = photos ? photos.filter(isAllowedPhoto) : undefined;
   if (photos && safePhotos && safePhotos.length !== photos.length) {
-    console.warn(
-      `[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`,
-    );
+    console.warn(`[funnel] dropped ${photos.length - safePhotos.length} non-data-URI photo(s) from lead ${leadId}`);
   }
   await upsertLead({
     lead_id: leadId,

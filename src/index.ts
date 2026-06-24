@@ -7,7 +7,9 @@ import { upsertLead } from "./store";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
-  console.error("TELEGRAM_BOT_TOKEN missing — set it in .env to go live. Core logic still runs via `npm run test:core`.");
+  console.error(
+    "TELEGRAM_BOT_TOKEN missing — set it in .env to go live. Core logic still runs via `npm run test:core`.",
+  );
   process.exit(1);
 }
 
@@ -22,8 +24,9 @@ bot.on("message", async (m) => {
   await upsertLead({ lead_id, channel: "telegram", name: m.from?.first_name, photos });
 
   const res = await runLead({ lead_id, channel: "telegram", inbound_text: text, photo_urls: photos });
-  const reply = res && "result" in res && typeof res.result === "string"
-    ? res.result
-    : "Thanks — one moment while our team reviews this.";
+  const reply =
+    res && "result" in res && typeof res.result === "string"
+      ? res.result
+      : "Thanks — one moment while our team reviews this.";
   await bot.sendMessage(m.chat.id, reply);
 });

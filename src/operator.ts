@@ -10,8 +10,12 @@ import { checkEscalation } from "./escalation";
 import { upsertLead, getLead, type Lead } from "./store";
 import { SYSTEM_PROMPT } from "./prompt";
 import {
-  tool_score_lead, tool_book_evaluation, tool_create_work_order,
-  tool_raise_escalation, visionFallback, type YardAssessment,
+  tool_score_lead,
+  tool_book_evaluation,
+  tool_create_work_order,
+  tool_raise_escalation,
+  visionFallback,
+  type YardAssessment,
 } from "./tools";
 
 export interface OperatorInput {
@@ -52,7 +56,10 @@ const FREQ_WORDS: Array<[RegExp, Frequency]> = [
 
 function detectLanguage(text: string): "en" | "es" {
   if (/[áéíóúñ¿¡]/i.test(text)) return "es";
-  if (/\b(hola|gracias|jardín|jardin|mantenimiento|semanal|quincenal|mensual|por favor|necesito|cotización)\b/i.test(text)) return "es";
+  if (
+    /\b(hola|gracias|jardín|jardin|mantenimiento|semanal|quincenal|mensual|por favor|necesito|cotización)\b/i.test(text)
+  )
+    return "es";
   return "en";
 }
 
@@ -61,8 +68,11 @@ function extractZip(text: string): string | undefined {
 }
 
 function looksLikeAddress(text: string): boolean {
-  return /\d{1,5}\s+[A-Za-z0-9.\s]+\b(st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|way|ct|court|ter|terrace|pl|place)\b/i.test(text)
-    || /\b9\d{4}\b/.test(text);
+  return (
+    /\d{1,5}\s+[A-Za-z0-9.\s]+\b(st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|way|ct|court|ter|terrace|pl|place)\b/i.test(
+      text,
+    ) || /\b9\d{4}\b/.test(text)
+  );
 }
 
 function extractFrequency(text: string): Frequency | undefined {
@@ -84,7 +94,9 @@ function inferYardSize(text: string, fallback: YardSize): YardSize {
 }
 
 function confirmsBooking(text: string): boolean {
-  return /\b(yes|yep|sure|confirm|book it|that works|sounds good|let'?s do|go ahead|option|first|second|morning|afternoon|sí|si|confirmo|el primero|reservar)\b/i.test(text);
+  return /\b(yes|yep|sure|confirm|book it|that works|sounds good|let'?s do|go ahead|option|first|second|morning|afternoon|sí|si|confirmo|el primero|reservar)\b/i.test(
+    text,
+  );
 }
 
 function chosenSlotIndex(text: string): 0 | 1 {
@@ -120,7 +132,11 @@ export function nextSlots(base = new Date()): string[] {
 function fmtSlot(iso: string, lang: "en" | "es"): string {
   const d = new Date(iso);
   return d.toLocaleString(lang === "es" ? "es-US" : "en-US", {
-    weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: "America/Los_Angeles",
   });
 }
@@ -137,7 +153,6 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const zip = extractZip(text);
   const freq = extractFrequency(text);
   const propType = detectPropertyType(text);
-  const hasAddress = !!prev?.address || looksLikeAddress(text);
   const address = looksLikeAddress(text) ? text : prev?.address;
 
   let lead = await upsertLead({
@@ -151,18 +166,29 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
     photos,
     first_response_at: prev?.first_response_at ?? new Date().toISOString(),
   });
-  trace.push(`parsed signals: lang=${lang}${zip ? ` zip=${zip}` : ""}${freq ? ` freq=${freq}` : ""}${propType ? ` type=${propType}` : ""}${input.has_photo ? " +photo" : ""}`);
+  trace.push(
+    `parsed signals: lang=${lang}${zip ? ` zip=${zip}` : ""}${freq ? ` freq=${freq}` : ""}${propType ? ` type=${propType}` : ""}${input.has_photo ? " +photo" : ""}`,
+  );
 
   const decision: OperatorDecision = {
-    intent: "intake", language: lang, escalated: false, escalation_reasons: [],
-    missing: [], slots: [], stage: lead.status, used_llm: false, trace,
+    intent: "intake",
+    language: lang,
+    escalated: false,
+    escalation_reasons: [],
+    missing: [],
+    slots: [],
+    stage: lead.status,
+    used_llm: false,
+    trace,
   };
 
   // 1) Escalation gate (spec §12.2) — runs before any client-facing booking.
   const esc = checkEscalation({ inbound_text: text, property_type: lead.property_type });
   if (esc.escalate) {
     lead = await tool_raise_escalation(
-      lead.lead_id, lead.channel, esc.reasons.join(", "),
+      lead.lead_id,
+      lead.channel,
+      esc.reasons.join(", "),
       `Auto-flagged on intake: ${esc.reasons.join("; ")}. Inbound: "${text.slice(0, 240)}"`,
     );
     decision.escalated = true;
@@ -177,7 +203,8 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   // 2) Qualify (geo + A/B/C). Out of area → not a fit.
   const geo = geoQualify({ address: lead.address, zip });
   const scored = tool_score_lead({
-    address: lead.address, zip,
+    address: lead.address,
+    zip,
     property_type: (lead.property_type as never) ?? "residential",
     has_photos: lead.photos.length > 0,
     desired_frequency: lead.desired_frequency,
@@ -187,8 +214,15 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   trace.push(`geo: ${geo.reason}; score=${scored.score} (${scored.reasons.join("; ")})`);
 
   if (scored.score === "C" && geo.in_area === false && (lead.address || zip)) {
-    lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, lead_score: "C", status: "Not a Fit", ai_recommendation: geo.reason });
-    decision.intent = "decline"; decision.stage = lead.status;
+    lead = await upsertLead({
+      lead_id: lead.lead_id,
+      channel: lead.channel,
+      lead_score: "C",
+      status: "Not a Fit",
+      ai_recommendation: geo.reason,
+    });
+    decision.intent = "decline";
+    decision.stage = lead.status;
     const reply = await composeReply({ kind: "out_of_area", lang, lead, userText: text, decision });
     return { reply, lead, decision };
   }
@@ -196,16 +230,25 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   // 3) Missing info → ask for exactly what's missing (spec §8.2).
   const missing: string[] = [];
   if (!lead.address) missing.push(lang === "es" ? "la dirección" : "the property address");
-  if (!lead.desired_frequency) missing.push(lang === "es" ? "la frecuencia (semanal, quincenal o mensual)" : "preferred frequency (weekly, biweekly, or monthly)");
+  if (!lead.desired_frequency)
+    missing.push(
+      lang === "es"
+        ? "la frecuencia (semanal, quincenal o mensual)"
+        : "preferred frequency (weekly, biweekly, or monthly)",
+    );
   if (lead.photos.length === 0) missing.push(lang === "es" ? "algunas fotos del jardín" : "a few photos of the garden");
   decision.missing = missing;
 
   if (missing.length > 0) {
     lead = await upsertLead({
-      lead_id: lead.lead_id, channel: lead.channel, lead_score: scored.score, zone: geo.zone,
+      lead_id: lead.lead_id,
+      channel: lead.channel,
+      lead_score: scored.score,
+      zone: geo.zone,
       status: lead.address || lead.desired_frequency || lead.photos.length ? "Waiting for Info" : "New Lead",
     });
-    decision.intent = "collect_info"; decision.stage = lead.status;
+    decision.intent = "collect_info";
+    decision.stage = lead.status;
     trace.push(`missing: ${missing.join(", ")} → ${lead.status}`);
     const reply = await composeReply({ kind: "collect_info", lang, missing, lead, userText: text, decision });
     return { reply, lead, decision };
@@ -223,19 +266,39 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
   const pkg = recommendPackage(lead.desired_frequency as Frequency, size);
   decision.price_range = range.covered ? { low: range.low, high: range.high } : undefined;
   decision.suggested_package = pkg;
-  trace.push(`vision: ${size} yard, cleanup=${vision.cleanup_required}; range=$${range.low}-$${range.high}; package=${pkg}`);
+  trace.push(
+    `vision: ${size} yard, cleanup=${vision.cleanup_required}; range=$${range.low}-$${range.high}; package=${pkg}`,
+  );
 
   if (!range.covered) {
-    lead = await tool_raise_escalation(lead.lead_id, lead.channel, "pricing outside rubric coverage", `Pricing engine returned no covered range for ${size}/${lead.desired_frequency}.`);
-    decision.escalated = true; decision.escalation_reasons = ["pricing outside rubric coverage"]; decision.stage = lead.status;
-    const reply = await composeReply({ kind: "escalated", lang, reasons: decision.escalation_reasons, lead, userText: text, decision });
+    lead = await tool_raise_escalation(
+      lead.lead_id,
+      lead.channel,
+      "pricing outside rubric coverage",
+      `Pricing engine returned no covered range for ${size}/${lead.desired_frequency}.`,
+    );
+    decision.escalated = true;
+    decision.escalation_reasons = ["pricing outside rubric coverage"];
+    decision.stage = lead.status;
+    const reply = await composeReply({
+      kind: "escalated",
+      lang,
+      reasons: decision.escalation_reasons,
+      lead,
+      userText: text,
+      decision,
+    });
     return { reply, lead, decision };
   }
 
   lead = await upsertLead({
-    lead_id: lead.lead_id, channel: lead.channel, lead_score: "A", zone: geo.zone,
+    lead_id: lead.lead_id,
+    channel: lead.channel,
+    lead_score: "A",
+    zone: geo.zone,
     vision_assessment: vision as unknown as Record<string, unknown>,
-    suggested_package: pkg, price_range: { low: range.low, high: range.high },
+    suggested_package: pkg,
+    price_range: { low: range.low, high: range.high },
     ai_recommendation: `${lead.desired_frequency} ${pkg} maintenance${vision.cleanup_required ? " (initial cleanup required first — separate quote)" : ""}.`,
     status: "AI Qualified",
   });
@@ -249,8 +312,10 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
     const slot = slots[chosenSlotIndex(text)]!;
     const booked = await tool_book_evaluation({ ...lead, address: lead.address } as never, slot);
     if (booked.ok) {
-      lead = await tool_create_work_order(lead.lead_id) as Lead;
-      decision.booked_slot = slot; decision.intent = "booked"; decision.stage = lead.status;
+      lead = (await tool_create_work_order(lead.lead_id)) as Lead;
+      decision.booked_slot = slot;
+      decision.intent = "booked";
+      decision.stage = lead.status;
       trace.push(`booked ${slot} → work order created`);
       const reply = await composeReply({ kind: "booked", lang, lead, slot, range, pkg, userText: text, decision });
       return { reply, lead, decision };
@@ -260,20 +325,64 @@ export async function runOperator(input: OperatorInput): Promise<OperatorResult>
 
   // Otherwise, offer two slots.
   lead = await upsertLead({ lead_id: lead.lead_id, channel: lead.channel, status: "Ready to Schedule" });
-  decision.intent = "offer_slots"; decision.stage = lead.status;
+  decision.intent = "offer_slots";
+  decision.stage = lead.status;
   trace.push(`offered slots → Ready to Schedule`);
-  const reply = await composeReply({ kind: "offer_slots", lang, lead, slots, range, pkg, vision, userText: text, decision });
+  const reply = await composeReply({
+    kind: "offer_slots",
+    lang,
+    lead,
+    slots,
+    range,
+    pkg,
+    vision,
+    userText: text,
+    decision,
+  });
   return { reply, lead, decision };
 }
 
 // ---- Reply composition: deterministic decision in, brand-voice prose out ----
 
 type ReplyCtx =
-  | { kind: "collect_info"; lang: "en" | "es"; missing: string[]; lead: Lead; userText: string; decision: OperatorDecision }
-  | { kind: "escalated"; lang: "en" | "es"; reasons: string[]; lead: Lead; userText: string; decision: OperatorDecision }
+  | {
+      kind: "collect_info";
+      lang: "en" | "es";
+      missing: string[];
+      lead: Lead;
+      userText: string;
+      decision: OperatorDecision;
+    }
+  | {
+      kind: "escalated";
+      lang: "en" | "es";
+      reasons: string[];
+      lead: Lead;
+      userText: string;
+      decision: OperatorDecision;
+    }
   | { kind: "out_of_area"; lang: "en" | "es"; lead: Lead; userText: string; decision: OperatorDecision }
-  | { kind: "offer_slots"; lang: "en" | "es"; lead: Lead; slots: string[]; range: ReturnType<typeof quoteRange>; pkg: string; vision: YardAssessment; userText: string; decision: OperatorDecision }
-  | { kind: "booked"; lang: "en" | "es"; lead: Lead; slot: string; range: ReturnType<typeof quoteRange>; pkg: string; userText: string; decision: OperatorDecision };
+  | {
+      kind: "offer_slots";
+      lang: "en" | "es";
+      lead: Lead;
+      slots: string[];
+      range: ReturnType<typeof quoteRange>;
+      pkg: string;
+      vision: YardAssessment;
+      userText: string;
+      decision: OperatorDecision;
+    }
+  | {
+      kind: "booked";
+      lang: "en" | "es";
+      lead: Lead;
+      slot: string;
+      range: ReturnType<typeof quoteRange>;
+      pkg: string;
+      userText: string;
+      decision: OperatorDecision;
+    };
 
 async function composeReply(ctx: ReplyCtx): Promise<string> {
   const fallback = templateReply(ctx);
@@ -290,11 +399,16 @@ async function composeReply(ctx: ReplyCtx): Promise<string> {
       do_not_change: "Use ONLY these numbers/slots. Never invent or alter a price. End on a clear next step.",
     };
     const resp = await client.messages.create({
-      model, max_tokens: 500,
+      model,
+      max_tokens: 500,
       system: `${SYSTEM_PROMPT}\n\n# AUTHORITATIVE DECISION (already made by the deterministic engine — phrase it warmly, never contradict, never invent prices)\n${JSON.stringify(authoritative, null, 2)}`,
       messages: [{ role: "user", content: ctx.userText || "(client opened the conversation)" }],
     });
-    const out = resp.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("").trim();
+    const out = resp.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { text: string }).text)
+      .join("")
+      .trim();
     ctx.decision.used_llm = true;
     return out || fallback;
   } catch {
@@ -322,11 +436,13 @@ function templateReply(ctx: ReplyCtx): string {
         : `Thank you${name} for considering Go Green Landscape. Your location is currently outside our San Francisco service area, so this may not be the best fit for our recurring maintenance. We truly appreciate you reaching out.`;
     case "offer_slots": {
       const [a, b] = ctx.slots;
-      const cleanup = (ctx.vision.cleanup_required)
-        ? (es ? " Antes del servicio recurrente recomendamos una limpieza inicial (se cotiza por separado)." : " Before recurring service we'd recommend an initial cleanup (quoted separately).")
+      const cleanup = ctx.vision.cleanup_required
+        ? es
+          ? " Antes del servicio recurrente recomendamos una limpieza inicial (se cotiza por separado)."
+          : " Before recurring service we'd recommend an initial cleanup (quoted separately)."
         : "";
       return es
-        ? `Gracias${name}. Según lo que vemos, recomendamos mantenimiento ${frEs(ctx.lead.desired_frequency)} plan ${ctx.pkg}, en un rango aproximado de $${ctx.range.low}–$${ctx.range.high} por visita (el precio final requiere una revisión en sitio).${cleanup} Tenemos disponibilidad el ${fmtSlot(a!, "es")} o el ${fmtSlot(b!, "es")}. ¿Cuál le funciona mejor?`
+        ? `Gracias${name}. Según lo que vemos, recomendamos mantenimiento ${frequencyEs(ctx.lead.desired_frequency)} plan ${ctx.pkg}, en un rango aproximado de $${ctx.range.low}–$${ctx.range.high} por visita (el precio final requiere una revisión en sitio).${cleanup} Tenemos disponibilidad el ${fmtSlot(a!, "es")} o el ${fmtSlot(b!, "es")}. ¿Cuál le funciona mejor?`
         : `Thank you${name}. Based on what we can see, we'd recommend ${ctx.lead.desired_frequency} ${ctx.pkg} maintenance, in an approximate range of $${ctx.range.low}–$${ctx.range.high} per visit (final pricing needs an on-site review).${cleanup} We have availability on ${fmtSlot(a!, "en")} or ${fmtSlot(b!, "en")}. Which works better for you?`;
     }
     case "booked":
@@ -336,7 +452,7 @@ function templateReply(ctx: ReplyCtx): string {
   }
 }
 
-function frEs(freq?: string): string {
+function frequencyEs(freq?: string): string {
   if (freq === "weekly") return "semanal";
   if (freq === "biweekly") return "quincenal";
   if (freq === "monthly") return "mensual";

@@ -8,7 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
-import type { Tier, SlotOffer, PricingResult, VisionAssessment } from "@/src/contract";
+import { newWebLeadId } from "@/src/id";
+import { parseCheckoutReturn } from "@/src/checkout-return";
+import type { Tier, SlotOffer, VisionAssessment } from "@/src/contract";
 import type {
   QualifyResult,
   RecommendTierResult,
@@ -24,18 +26,20 @@ import {
   type Lang,
   QualifyCard,
   TierOptionsCard,
-  QuoteCard,
   CheckoutCard,
   SlotPickerCard,
   ConfirmationCard,
   EscalationCard,
   TraceChip,
   AddressConfirmCard,
-  SlopePhotoPromptCard,
   ExactPriceCard,
 } from "./cards";
 import { AreaConfirmCard } from "./AreaConfirmCard";
 import type { LatLng } from "@/src/area-card-logic";
+
+// Survives the Stripe round-trip so a same-tab return (the FB/IG in-app browser,
+// which navigates in place) can recover the lead even without the URL param.
+const LEAD_STORE_KEY = "gg_lead_id";
 
 const COPY = {
   en: {
@@ -49,7 +53,6 @@ const COPY = {
     bookSlot: (when: string, id: string) => `Please book ${when} (slot ${id}).`,
     checking: "Checking your service area",
     analyzing: "Looking at your photos",
-    pricing: "Pricing your plan",
     staging: "Preparing secure checkout",
     finding: "Finding open visits",
     booking: "Locking your booking",
@@ -59,11 +62,11 @@ const COPY = {
     confirmingArea: "Confirming the area",
     exactPricing: "Calculating your exact price",
     areaConfirmedChip: (n: number) => `Area confirmed — ${n.toLocaleString()} sqft`,
-    areaConfirmedMessage: (n: number) =>
-      `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
+    areaConfirmedMessage: (n: number) => `I confirmed the maintained area on the map (~${n.toLocaleString()} sqft).`,
     areaPostFailed: "I couldn't save the area — let me try again in a moment.",
     addressYes: "Yes, use that address.",
     addressNo: "Let me re-enter my address.",
+    checkoutReturnResume: "I've completed payment — please confirm my booking and show my visit times.",
   },
   es: {
     greeting:
@@ -76,7 +79,6 @@ const COPY = {
     bookSlot: (when: string, id: string) => `Por favor reserva ${when} (espacio ${id}).`,
     checking: "Verificando tu zona de servicio",
     analyzing: "Revisando tus fotos",
-    pricing: "Calculando tu plan",
     staging: "Preparando el pago seguro",
     finding: "Buscando visitas disponibles",
     booking: "Confirmando tu reserva",
@@ -86,11 +88,11 @@ const COPY = {
     confirmingArea: "Confirmando el área",
     exactPricing: "Calculando tu precio exacto",
     areaConfirmedChip: (n: number) => `Área confirmada — ${n.toLocaleString()} pies²`,
-    areaConfirmedMessage: (n: number) =>
-      `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
+    areaConfirmedMessage: (n: number) => `Confirmé el área de mantenimiento en el mapa (~${n.toLocaleString()} pies²).`,
     areaPostFailed: "No pude guardar el área — déjame intentarlo de nuevo.",
     addressYes: "Sí, usa esa dirección.",
     addressNo: "Déjame corregir mi dirección.",
+    checkoutReturnResume: "Ya completé el pago — por favor confirma mi reserva y muéstrame los horarios disponibles.",
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
@@ -98,6 +100,28 @@ interface ToolPart {
   toolName: string;
   state: "partial-call" | "call" | "result";
   result?: unknown;
+}
+
+// One typed seam for the tool→card dispatch: maps each tool name to the result
+// shape its run* handler returns. `toolResult` narrows `tp.result` (typed
+// `unknown` off the wire) to that shape, replacing the blind `res as XResult`
+// casts in renderTool with a single key-checked cast point.
+type ToolResultMap = {
+  qualify_lead: QualifyResult;
+  analyze_photos: VisionAssessment;
+  recommend_tier: RecommendTierResult;
+  propose_checkout: ProposeCheckoutResult;
+  offer_slots: SlotOffer[];
+  confirm_booking: ConfirmBookingResult;
+  raise_escalation: RaiseEscalationResult;
+  validate_address: ValidateAddressToolResult;
+  measure_property: MeasurePropertyResult;
+  confirm_area: ConfirmAreaResult;
+  compute_exact_price: ComputeExactPriceResult;
+};
+
+function toolResult<K extends keyof ToolResultMap>(tp: ToolPart, _k: K): ToolResultMap[K] {
+  return tp.result as ToolResultMap[K];
 }
 
 function toolPartsOf(m: Message): ToolPart[] {
@@ -132,7 +156,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
   // §1) — an enumerable id (useId + Date.now) would let an attacker walk every
   // in-flight lead. Until owner-session authz lands, the id itself is the
   // only thing keeping a stranger out of someone else's funnel.
-  const leadIdRef = useRef<string>(`web-${crypto.randomUUID()}`);
+  const leadIdRef = useRef<string>(newWebLeadId());
   const [photos, setPhotos] = useState<string[]>([]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -156,6 +180,28 @@ export function GenerativeChat({ language }: { language: Lang }) {
     void append({ role: "user", content: text }, { body: body() });
   };
 
+  // Post-payment return (go-live G2). On a Stripe return the success_url carries
+  // ?checkout=success&lead=<id>; restore that lead and nudge the agent to resume —
+  // it re-reads the lead from the shared store (paid_at set by the webhook) and
+  // moves to booking. The transcript needn't survive; the lead state in KV is
+  // authoritative. On a normal load, just persist the id so a same-tab round trip
+  // (FB/IG in-app browser) can recover it. Runs once.
+  const returnHandled = useRef(false);
+  useEffect(() => {
+    if (returnHandled.current || typeof window === "undefined") return;
+    returnHandled.current = true;
+    const stored = window.localStorage.getItem(LEAD_STORE_KEY);
+    const ret = parseCheckoutReturn(window.location.search, stored);
+    if (ret.leadId && (ret.isSuccess || ret.isCancelled)) {
+      leadIdRef.current = ret.leadId;
+      window.localStorage.setItem(LEAD_STORE_KEY, ret.leadId);
+      window.history.replaceState(null, "", window.location.pathname);
+      if (ret.isSuccess) send(c.checkoutReturnResume);
+    } else {
+      window.localStorage.setItem(LEAD_STORE_KEY, leadIdRef.current);
+    }
+  }, []);
+
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input.trim() || isBusy) return;
@@ -174,41 +220,56 @@ export function GenerativeChat({ language }: { language: Lang }) {
     const urls = await Promise.all(Array.from(files).slice(0, 6).map(read));
     const next = [...photos, ...urls].slice(0, 6);
     setPhotos(next);
-    void append({ role: "user", content: c.photosAdded(next.length) }, { body: { leadId: leadIdRef.current, language, photos: next } });
+    void append(
+      { role: "user", content: c.photosAdded(next.length) },
+      { body: { leadId: leadIdRef.current, language, photos: next } },
+    );
   };
 
   const runningLabel = (name: string): string => {
     switch (name) {
-      case "qualify_lead": return c.checking;
-      case "analyze_photos": return c.analyzing;
-      case "compute_pricing": return c.pricing;
-      case "propose_checkout": return c.staging;
-      case "offer_slots": return c.finding;
-      case "confirm_booking": return c.booking;
-      case "raise_escalation": return c.routing;
-      case "validate_address": return c.validatingAddress;
-      case "measure_property": return c.measuring;
-      case "confirm_area": return c.confirmingArea;
-      case "compute_exact_price": return c.exactPricing;
-      default: return c.running;
+      case "qualify_lead":
+        return c.checking;
+      case "analyze_photos":
+        return c.analyzing;
+      case "propose_checkout":
+        return c.staging;
+      case "offer_slots":
+        return c.finding;
+      case "confirm_booking":
+        return c.booking;
+      case "raise_escalation":
+        return c.routing;
+      case "validate_address":
+        return c.validatingAddress;
+      case "measure_property":
+        return c.measuring;
+      case "confirm_area":
+        return c.confirmingArea;
+      case "compute_exact_price":
+        return c.exactPricing;
+      default:
+        return c.running;
     }
   };
 
   const renderTool = (tp: ToolPart, key: string) => {
     if (tp.state !== "result") {
       return (
-        <div key={key} className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80">
+        <div
+          key={key}
+          className="rise-in inline-flex items-center gap-2 rounded-full border border-moss-100 bg-paper/60 px-3 py-1.5 text-[12px] text-moss-700/80"
+        >
           <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
           {runningLabel(tp.toolName)}…
         </div>
       );
     }
-    const res = tp.result;
     switch (tp.toolName) {
       case "qualify_lead":
-        return <QualifyCard key={key} lang={language} r={res as QualifyResult} />;
+        return <QualifyCard key={key} lang={language} r={toolResult(tp, "qualify_lead")} />;
       case "analyze_photos": {
-        const v = res as VisionAssessment;
+        const v = toolResult(tp, "analyze_photos");
         return (
           <TraceChip
             key={key}
@@ -227,26 +288,21 @@ export function GenerativeChat({ language }: { language: Lang }) {
           <TierOptionsCard
             key={key}
             lang={language}
-            r={res as RecommendTierResult}
+            r={toolResult(tp, "recommend_tier")}
             onChoose={(tier: Tier) => {
-              const name = (res as RecommendTierResult).options.find((o) => o.tier === tier)?.name ?? tier;
+              const name = toolResult(tp, "recommend_tier").options.find((o) => o.tier === tier)?.name ?? tier;
               send(c.chooseTier(name));
             }}
           />
         );
-      case "compute_pricing": {
-        const p = res as PricingResult | { error: string };
-        if ("error" in p) return null;
-        return <QuoteCard key={key} lang={language} p={p} />;
-      }
       case "propose_checkout":
-        return <CheckoutCard key={key} lang={language} r={res as ProposeCheckoutResult} />;
+        return <CheckoutCard key={key} lang={language} r={toolResult(tp, "propose_checkout")} />;
       case "offer_slots":
         return (
           <SlotPickerCard
             key={key}
             lang={language}
-            slots={res as SlotOffer[]}
+            slots={toolResult(tp, "offer_slots")}
             onPick={(s: SlotOffer) => {
               const when = `${s.date} ${s.startTime.slice(11, 16)}`;
               send(c.bookSlot(when, s.slotId));
@@ -254,11 +310,11 @@ export function GenerativeChat({ language }: { language: Lang }) {
           />
         );
       case "confirm_booking":
-        return <ConfirmationCard key={key} lang={language} r={res as ConfirmBookingResult} />;
+        return <ConfirmationCard key={key} lang={language} r={toolResult(tp, "confirm_booking")} />;
       case "raise_escalation":
-        return <EscalationCard key={key} lang={language} r={res as RaiseEscalationResult} />;
+        return <EscalationCard key={key} lang={language} r={toolResult(tp, "raise_escalation")} />;
       case "validate_address": {
-        const r = res as ValidateAddressToolResult;
+        const r = toolResult(tp, "validate_address");
         return (
           <AddressConfirmCard
             key={key}
@@ -269,7 +325,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "measure_property": {
-        const r = res as MeasurePropertyResult;
+        const r = toolResult(tp, "measure_property");
         // Center the satellite preview on the real parcel ring's centroid when we
         // have one (DataSF outline); fall back to SF center for the blank-draw path.
         const center: LatLng =
@@ -310,7 +366,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
                 }
               } catch (err) {
                 // Surface a soft retry hint into the chat — never silent.
-                // eslint-disable-next-line no-console
                 console.error("[confirm-area] failed:", err);
                 send(c.areaPostFailed);
               }
@@ -319,7 +374,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "confirm_area": {
-        const r = res as ConfirmAreaResult;
+        const r = toolResult(tp, "confirm_area");
         if (r.status === "area_out_of_range") return null;
         return (
           <div
@@ -332,7 +387,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
         );
       }
       case "compute_exact_price":
-        return <ExactPriceCard key={key} lang={language} result={res as ComputeExactPriceResult} />;
+        return <ExactPriceCard key={key} lang={language} result={toolResult(tp, "compute_exact_price")} />;
       default:
         return null;
     }
@@ -378,9 +433,7 @@ export function GenerativeChat({ language }: { language: Lang }) {
                 </div>
               )}
               {tools.length > 0 && (
-                <div className="space-y-2.5 pl-9">
-                  {tools.map((tp, i) => renderTool(tp, `${m.id}-t${i}`))}
-                </div>
+                <div className="space-y-2.5 pl-9">{tools.map((tp, i) => renderTool(tp, `${m.id}-t${i}`))}</div>
               )}
             </div>
           );
@@ -403,8 +456,12 @@ export function GenerativeChat({ language }: { language: Lang }) {
       {photos.length > 0 && (
         <div className="flex gap-2 overflow-x-auto border-t border-moss-100 bg-paper/40 px-4 py-2 sm:px-6">
           {photos.map((p, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={p} alt={`yard ${i + 1}`} className="h-12 w-12 shrink-0 rounded-lg border border-moss-200 object-cover" />
+            <img
+              key={i}
+              src={p}
+              alt={`yard ${i + 1}`}
+              className="h-12 w-12 shrink-0 rounded-lg border border-moss-200 object-cover"
+            />
           ))}
         </div>
       )}

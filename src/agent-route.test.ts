@@ -58,7 +58,11 @@ async function main() {
   console.log("\n=== T13: Body schema accepts optional `intent` ad-param (back-compat) ===");
   {
     const withIntent = Body.safeParse({ messages: [], leadId: "i-1", language: "en", intent: "weekly_mowing" });
-    ok("Body accepts an object WITH intent", withIntent.success, withIntent.success ? "" : JSON.stringify(withIntent.error.issues));
+    ok(
+      "Body accepts an object WITH intent",
+      withIntent.success,
+      withIntent.success ? "" : JSON.stringify(withIntent.error.issues),
+    );
     const withoutIntent = Body.safeParse({ messages: [], leadId: "i-2", language: "en" });
     ok("Body still accepts an object WITHOUT intent (back-compat)", withoutIntent.success);
     const wrongType = Body.safeParse({ messages: [], leadId: "i-3", language: "en", intent: 123 });

@@ -35,9 +35,7 @@ export function computeKpis(leads: Lead[]): Kpis {
     .map((l) => (Date.parse(l.first_response_at!) - Date.parse(l.created_at)) / 1000)
     .filter((s) => s >= 0)
     .sort((a, b) => a - b);
-  const medianFirstResponseSec = responseSecs.length
-    ? responseSecs[Math.floor((responseSecs.length - 1) / 2)]!
-    : null;
+  const medianFirstResponseSec = responseSecs.length ? responseSecs[Math.floor((responseSecs.length - 1) / 2)]! : null;
 
   let potentialMonthlyRevenue = 0;
   for (const l of leads) {

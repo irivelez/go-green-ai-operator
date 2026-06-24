@@ -18,8 +18,7 @@ const body = Manrope({
 
 export const metadata: Metadata = {
   title: "Go Green AI Operator",
-  description:
-    "Autonomous maintenance operator — intake → qualify → price → book, with human-in-the-loop escalation.",
+  description: "Autonomous maintenance operator — intake → qualify → price → book, with human-in-the-loop escalation.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

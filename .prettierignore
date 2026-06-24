@@ -1,0 +1,16 @@
+# Build artifacts & deps
+node_modules
+.next
+dist
+data
+.dev-data
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Huge generated file — reformatting it is pure churn
+package-lock.json
+
+# Markdown is EXCLUDED on purpose: CLAUDE.md, notes/, docs/ and the runbooks use
+# hand-aligned tables and deliberate wrapping that Prettier's markdown printer would
+# mangle. Those docs are the repo's legibility artifacts — leave them as authored.
+*.md

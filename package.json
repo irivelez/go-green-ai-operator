@@ -2,6 +2,9 @@
   "name": "gogreen-ai-operator",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "description": "Go Green Maintenance AI Operator — autonomous intake→qualify→price→book with HITL escalation (Deltanova design-partner build)",
   "scripts": {
     "dev": "next dev",
@@ -10,16 +13,21 @@
     "agent": "STORE_BACKEND=json tsx watch src/index.ts",
     "test:core": "tsx src/core.test.ts",
     "test:operator": "tsx src/operator.test.ts",
-    "test:agent": "tsx src/agent.test.ts",
     "test": "tsx src/core.test.ts && tsx src/operator.test.ts",
+    "test:all": "node scripts/test-all.mjs",
     "eval": "tsx src/agent-evals.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/react": "^1.2.12",
     "@anthropic-ai/sdk": "^0.39.0",
     "@composio/core": "^0.10.0",
+    "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.0",
     "@vis.gl/react-google-maps": "^1.8.3",
     "ai": "^4.3.19",
@@ -41,8 +49,11 @@
     "@types/node-telegram-bot-api": "^0.64.7",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.4",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.62.0"
   }
 }

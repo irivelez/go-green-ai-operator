@@ -1,4 +1,4 @@
-// Stripe webhook — TEST MODE ONLY.
+// Stripe webhook (test-mode by default; live gated by STRIPE_LIVE_OK=1).
 //
 // Verifies the signature, decodes the event, and reduces it into the lead store
 // via the pure handler in src/stripe.ts. Idempotent on (lead_id, sessionId).
@@ -7,7 +7,8 @@
 //   stripe listen --forward-to localhost:3000/api/stripe/webhook
 //   → exposes STRIPE_WEBHOOK_SECRET (whsec_…); add it to .env.local.
 
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { constructWebhookEvent, handleStripeEvent } from "@/src/stripe";
 
 export const runtime = "nodejs";

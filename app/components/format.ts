@@ -8,9 +8,18 @@ export function fmtSeconds(sec: number | null | undefined): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-export function fmtMoney(n: number | null | undefined): string {
+// Single money renderer. Two call-site shapes, both preserved exactly:
+//   • round: true  → dashboard KPI aggregates — `$1,234` (integer, no decimals)
+//   • default      → customer prices — `$245` / `$12.50` (0 dp if whole, else 2 dp)
+// null/NaN → "—" (only the dashboard path ever passes nullable; harmless for prices).
+export function money(n: number | null | undefined, opts?: { round?: boolean }): string {
   if (n == null || Number.isNaN(n)) return "—";
-  return `$${Math.round(n).toLocaleString("en-US")}`;
+  if (opts?.round) return `$${Math.round(n).toLocaleString("en-US")}`;
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}`;
+}
+
+export function fmtMoney(n: number | null | undefined): string {
+  return money(n, { round: true });
 }
 
 export function fmtRange(r?: { low: number; high: number } | null): string | null {
@@ -27,24 +36,11 @@ const LA_DATETIME = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-const LA_TIME = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Los_Angeles",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 export function fmtLA(iso?: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return LA_DATETIME.format(d) + " PT";
-}
-
-export function fmtLAtime(iso?: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return LA_TIME.format(d) + " PT";
 }
 
 export function relTime(iso?: string): string {
@@ -62,7 +58,7 @@ export function initials(name?: string, fallback?: string): string {
   if (name && name.trim().length > 0) {
     const parts = name.trim().split(/\s+/);
     const first = parts[0]?.[0] ?? "";
-    const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : "";
+    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
     return (first + last).toUpperCase() || "·";
   }
   if (fallback && fallback.length > 0) {

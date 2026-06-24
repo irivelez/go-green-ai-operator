@@ -35,9 +35,34 @@ import { Redis } from "@upstash/redis";
 import { SEED_LEADS } from "./seed";
 
 export type LeadStatus =
-  | "New Lead" | "Waiting for Info" | "Info Received" | "AI Qualified"
-  | "Ready to Schedule" | "Scheduled" | "Work Order Created"
-  | "Needs Human Review" | "Not a Fit" | "Lost / No Response";
+  | "New Lead"
+  | "Waiting for Info"
+  | "Info Received"
+  | "AI Qualified"
+  | "Ready to Schedule"
+  | "Scheduled"
+  | "Work Order Created"
+  | "Needs Human Review"
+  | "Not a Fit"
+  | "Lost / No Response";
+
+// Crew/booking handoff payload persisted on Lead.work_order. All keys OPTIONAL —
+// this is the union of every write site (confirm_booking, calendar handoff,
+// tools.ts work-order creation, seed fixtures) and each writes only its subset.
+export interface WorkOrder {
+  slotId?: string;
+  date?: string;
+  window?: string;
+  crewSize?: number;
+  calendar_event_id?: string;
+  address?: string;
+  zone?: string | null;
+  frequency?: string;
+  package?: string;
+  price_range?: { low: number; high: number };
+  visit_at?: string;
+  notes?: string;
+}
 
 export interface LeadEvent {
   ts: string;
@@ -77,7 +102,7 @@ export interface Lead {
   status: LeadStatus;
   escalation_reason?: string;
   visit_at?: string;
-  work_order?: Record<string, unknown>;
+  work_order?: WorkOrder;
   internal_notes?: string;
   created_at: string;
   first_response_at?: string;
@@ -95,6 +120,12 @@ export interface Lead {
   // the flat PRICE_BOOK[tier].perVisit (review blocker A).
   per_visit_price?: number;
   monthly_price?: number;
+  // PROOF OF PAYMENT (not just status). Set ONLY by handleStripeEvent (stripe.ts)
+  // when a Stripe checkout.session.completed fires — an ISO timestamp of the
+  // confirmed first charge. confirm_booking gates on this, NOT on status alone:
+  // operator.ts / hitl.ts also set status "Ready to Schedule" for the dashboard
+  // view without any charge, so the status string is not proof a card was charged.
+  paid_at?: string;
   intent?: string;
   _actions: string[]; // idempotency ledger of (action_hash)
   events?: LeadEvent[]; // HITL learning loop — owner corrections + agent decisions
@@ -121,8 +152,8 @@ class MemoryBackend implements Backend {
     for (const l of seed) this.leads.set(l.lead_id, structuredClone(l));
   }
   async getLead(id: string): Promise<Lead | undefined> {
-    const l = this.leads.get(id);
-    return l ? structuredClone(l) : undefined;
+    const lead = this.leads.get(id);
+    return lead ? structuredClone(lead) : undefined;
   }
   async putLead(lead: Lead): Promise<void> {
     this.leads.set(lead.lead_id, structuredClone(lead));
@@ -139,7 +170,9 @@ class MemoryBackend implements Backend {
 // Acceptable single-writer (one `next dev` process); never use on Vercel.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface JsonDB { leads: Record<string, Lead>; }
+interface JsonDB {
+  leads: Record<string, Lead>;
+}
 
 class JsonBackend implements Backend {
   constructor(private path: string) {}
@@ -166,9 +199,7 @@ class JsonBackend implements Backend {
     this.save(db);
   }
   async allLeads(): Promise<Lead[]> {
-    return Object.values(this.load().leads).sort((a, b) =>
-      b.created_at.localeCompare(a.created_at),
-    );
+    return Object.values(this.load().leads).sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 }
 
@@ -253,7 +284,27 @@ function getKvBackend(): KvBackend {
 // kv: Vercel prod. json: long-running dev/Telegram host. memory: tests + zero-cfg.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Production-store safety. On Vercel every serverless invocation is its own
+// process, so the memory/json backends are per-instance — a Stripe webhook's
+// paid_at write would land in an instance the chat tab never reads, and booking
+// would never unlock. Only the shared KV backend is correct there. Returns an
+// error string when the (env-derived) config is unsafe, else null. Keyed on
+// VERCEL, NOT NODE_ENV, so `next build` locally and in CI (neither sets VERCEL)
+// is unaffected, while a real Vercel deploy fails loud instead of losing data.
+type StoreEnv = Record<string, string | undefined>; // reads VERCEL / STORE_BACKEND / LEADS_DB_PATH
+export function prodStoreBackendError(env: StoreEnv = process.env): string | null {
+  if (!env.VERCEL) return null;
+  const mode = env.STORE_BACKEND ?? (env.LEADS_DB_PATH ? "json" : "memory");
+  if (mode === "kv") return null;
+  return (
+    `On Vercel, STORE_BACKEND must be "kv" (got "${mode}"). memory/json are per-instance and lose ` +
+    `cross-request state — set STORE_BACKEND=kv and provision Upstash. See docs/runbooks/deploy-to-vercel.md.`
+  );
+}
+
 function pickBackend(): Backend {
+  const configError = prodStoreBackendError();
+  if (configError) throw new Error(configError);
   const mode = process.env.STORE_BACKEND ?? (process.env.LEADS_DB_PATH ? "json" : "memory");
   if (mode === "kv") return getKvBackend();
   if (mode === "json") return new JsonBackend(process.env.LEADS_DB_PATH ?? "data/leads.json");
@@ -274,13 +325,16 @@ export function resetStore(seed: Lead[] = []): void {
 // Public API (7 functions). All async. Consumers MUST await.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function upsertLead(
-  fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }
-): Promise<Lead> {
+export async function upsertLead(fields: Partial<Lead> & { lead_id: string; channel: Lead["channel"] }): Promise<Lead> {
   const existing = await backend.getLead(fields.lead_id);
   const lead: Lead = {
-    photos: [], status: "New Lead", created_at: new Date().toISOString(), _actions: [], events: [],
-    ...existing, ...fields,
+    photos: [],
+    status: "New Lead",
+    created_at: new Date().toISOString(),
+    _actions: [],
+    events: [],
+    ...existing,
+    ...fields,
   } as Lead;
   await backend.putLead(lead);
   return lead;
@@ -296,10 +350,7 @@ export async function allLeads(): Promise<Lead[]> {
 
 // HITL learning loop (spec §A.6): append a structured event to a lead's timeline.
 // Owner corrections, agent decisions, system notes — durable on the same store as the lead.
-export async function appendEvent(
-  lead_id: string,
-  event: Omit<LeadEvent, "ts"> & { ts?: string }
-): Promise<LeadEvent> {
+export async function appendEvent(lead_id: string, event: Omit<LeadEvent, "ts"> & { ts?: string }): Promise<LeadEvent> {
   const stored: LeadEvent = { ...event, ts: event.ts ?? new Date().toISOString() };
   const lead = await backend.getLead(lead_id);
   if (!lead) return stored; // no-op when lead absent — mirror actionSeen's defensive shape
@@ -332,7 +383,10 @@ export async function listEvents(lead_id: string): Promise<LeadEvent[]> {
 // Lua script or per-field HSET model so writes diff-merge atomically. Tracked
 // in AGENTS.md known-gaps §4.
 export async function actionSeen(lead_id: string, action: string, payload: unknown): Promise<boolean> {
-  const hash = createHash("sha256").update(action + JSON.stringify(payload)).digest("hex").slice(0, 16);
+  const hash = createHash("sha256")
+    .update(action + JSON.stringify(payload))
+    .digest("hex")
+    .slice(0, 16);
   const lead = await backend.getLead(lead_id);
   if (!lead) return false;
   if (lead._actions.includes(hash)) return true;

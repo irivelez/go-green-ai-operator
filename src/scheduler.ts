@@ -10,12 +10,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import {
-  FIRST_SERVE_WEEKDAY,
-  SERVE_WINDOW_DAYS,
-  SLOTS_PER_DAY,
-  type SlotOffer,
-} from "./contract";
+import { FIRST_SERVE_WEEKDAY, SERVE_WINDOW_DAYS, SLOTS_PER_DAY, type SlotOffer } from "./contract";
 import { getLead, actionSeen } from "./store";
 
 // Daily slot windows (local wall-clock). T1..T4.
@@ -85,10 +80,7 @@ function isoLocal(ymd: string, h: number, m: number): string {
 
 // ── public API ───────────────────────────────────────────────────────────────
 
-export function generateSlots(
-  fromDate: Date,
-  windowDays: number = SERVE_WINDOW_DAYS,
-): SlotOffer[] {
+export function generateSlots(fromDate: Date, windowDays: number = SERVE_WINDOW_DAYS): SlotOffer[] {
   const start = firstWeekdayOnOrAfter(fromDate, FIRST_SERVE_WEEKDAY);
   const windowEnd = new Date(fromDate.getTime());
   windowEnd.setUTCDate(windowEnd.getUTCDate() + windowDays);
@@ -118,10 +110,7 @@ export function generateSlots(
   return offers;
 }
 
-export function availableSlots(
-  _leadId: string,
-  fromDate: Date = new Date(),
-): SlotOffer[] {
+export function availableSlots(_leadId: string, fromDate: Date = new Date()): SlotOffer[] {
   return generateSlots(fromDate).filter((s) => s.available);
 }
 
@@ -129,11 +118,7 @@ export type BookResult =
   | { ok: true; slot: SlotOffer }
   | { ok: false; reason: "taken" | "out_of_window" | "lead_missing" };
 
-export async function bookSlot(
-  leadId: string,
-  slotId: string,
-  fromDate: Date = new Date(),
-): Promise<BookResult> {
+export async function bookSlot(leadId: string, slotId: string, fromDate: Date = new Date()): Promise<BookResult> {
   if (!(await getLead(leadId))) return { ok: false, reason: "lead_missing" };
 
   const slot = generateSlots(fromDate).find((s) => s.slotId === slotId);

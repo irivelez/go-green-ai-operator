@@ -1,4 +1,7 @@
-// Shared client types — mirror the API contract exactly.
+// Shared client types. `Lead` is DERIVED from the server (src/lead-dto.ts) so it
+// can't drift from the store shape; the rest are dashboard-specific view models.
+
+import type { LeadDTO } from "@/src/lead-dto";
 
 export type LeadStatus =
   | "New Lead"
@@ -21,30 +24,8 @@ export interface PriceRange {
   high: number;
 }
 
-export interface Lead {
-  lead_id: string;
-  name?: string;
-  channel: Channel;
-  language?: Language;
-  address?: string;
-  zone?: string | null;
-  property_type?: string;
-  desired_frequency?: string;
-  photos: string[];
-  vision_assessment?: Record<string, unknown>;
-  lead_score?: Score;
-  risk_level?: string;
-  ai_recommendation?: string;
-  suggested_package?: string;
-  price_range?: PriceRange;
-  status: LeadStatus;
-  escalation_reason?: string;
-  visit_at?: string;
-  work_order?: Record<string, unknown>;
-  internal_notes?: string;
-  created_at: string;
-  first_response_at?: string;
-}
+// Derived from the store Lead (the single source) — excludes server-internal fields.
+export type Lead = LeadDTO;
 
 export interface Kpis {
   total: number;
