@@ -60,15 +60,22 @@ idempotent actions `(lead_id, action_hash)` · live Stripe gated behind `STRIPE_
 
 - **Frozen (serialized) — rename only with care:** `Lead` field names + `LeadStatus` string values (persisted to
   Redis/JSON), tier ids (`essential`/`signature`/`estate`), LLM tool names + their Zod input keys, API route paths,
-  env var names. Full map + the 8 logged behavior findings: `@notes/registries.md`.
+  env var names. Full map + the 8 logged behavior findings: `notes/registries.md`.
 - **Open known gaps (release blockers for scale):** no auth on `app/api/leads/*` and no `middleware.ts` (tenant
   isolation); a same-lead read-modify-write race in `src/store.ts`; no per-run spend cap; unratified rate card.
 - `STORE_BACKEND` selects the store (`memory` default / `json` local / `kv` Upstash prod). Behavior bugs found during
-  cleanup are **logged, not fixed** (`@notes/registries.md` §E).
+  cleanup are **logged, not fixed** (`notes/registries.md` §E).
 
-## Deeper docs (load on demand)
+## Reference docs (read on demand — these do NOT auto-load)
 
-- `@AGENTS.md` — project memory + the Engineering Constitution (the production-grade ruleset).
-- `@spec.md` — authoritative contract; **§A is the current V2 ad→pay→book build** (supersedes v1 §§1–19 where noted).
-- `@HANDOFF.md` — V2 pipeline state + carried-forward items. `@BUILD-DECISIONS.md` — locked web-funnel decisions.
-- `@notes/registries.md` — frozen-boundary / intentional-duplication / known-gaps map (from the legibility pass).
+Plain links, deliberately **not** `@`-imports: a CLAUDE.md `@`-import loads the whole file into context at launch (it is
+not lazy), and `spec.md` alone is ~640 lines. Open these only when a task needs them.
+
+- [AGENTS.md](./AGENTS.md) — project memory + the Engineering Constitution (§0–§10) + detailed known gaps.
+- [spec.md](./spec.md) — authoritative contract; **§A is the current V2 ad→pay→book build** (supersedes v1 §§1–19).
+- [HANDOFF.md](./HANDOFF.md) — V2 pipeline state + carried-forward items.
+- [BUILD-DECISIONS.md](./BUILD-DECISIONS.md) — locked web-funnel decisions.
+- [notes/registries.md](./notes/registries.md) — frozen-boundary / intentional-duplication / known-gaps map.
+- [notes/agent-legibility-research.md](./notes/agent-legibility-research.md) — why these are links, not `@`-imports.
+
+When editing under `src/` or `app/`, a nested `CLAUDE.md` there adds area-specific rules (those *do* load on demand).

@@ -14,8 +14,10 @@ agents.md standard) vs **[COMMUNITY]** (blogs — directional only).
   detailed API docs (link instead) · frequently-changing info. (same)
 - **[OFFICIAL]** "**Give Claude a way to verify its work**" — a test/build/lint gate it can run — is the single
   highest-leverage practice; it closes the agent's loop without a human. (same)
-- **[OFFICIAL]** Progressive disclosure: CLAUDE.md supports `@path/to/file` **imports** — link deep docs
-  (`@AGENTS.md`, `@spec.md`) so they load on demand instead of bloating every session. (same)
+- **[OFFICIAL]** CLAUDE.md supports `@path/to/file` **imports**. ⚠️ **CORRECTION (see `agent-legibility-research.md`):**
+  `@`-imports load the file **in full AT LAUNCH** — they are NOT lazy/progressive-disclosure and do NOT save context.
+  True on-demand loading comes only from **nested subdirectory CLAUDE.md** files. So large deep docs (`spec.md` etc.)
+  should be **plain links**, not `@`-imports; `@`-import only small, always-relevant content. (same)
 - **[OFFICIAL]** `/init` scaffolds a starter from the codebase; then refine by hand. Emphasis ("IMPORTANT"/"YOU MUST")
   improves adherence. Check it into git. (same)
 - **[OFFICIAL — agents.md]** AGENTS.md is "a README for agents": plain Markdown, any headings; include project

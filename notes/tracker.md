@@ -60,3 +60,10 @@ gate names the full path set explicitly (recon Step 1).
 - Tests import many internal symbols → the reachability oracle for dead code **must include `src/*.test.ts`**: an
   export with "no prod consumer" is often still test-referenced and is therefore NOT dead (and its test must not be
   deleted — doctrine invariant 8 / build-discipline §9).
+
+**Post-pass: agent-legibility follow-up (2026-06-23).** A deep-research pass on CLAUDE.md/repo structure drove four
+doc-only fixes (see `agent-legibility-research.md`): (1) root `CLAUDE.md` deeper-doc refs switched from eager `@`-imports
+to plain links (~1,144→~74 eager lines/session); (2) added on-demand nested `src/CLAUDE.md` + `app/CLAUDE.md`; (3)
+**decision: `src/` kept FLAT — no reorg** (no evidence foldering a domain core helps agents; colocation evidence is
+routes-only; widest blast radius — consistent with Phase 11 leaving structure alone); (4) corrected the `phase13-research.md`
+"@-imports = progressive disclosure" misconception.
