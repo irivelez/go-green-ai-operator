@@ -8,6 +8,7 @@ import {
   isStripeLiveOK,
   getLotCoverageRatio,
   getAreaConfidenceThreshold,
+  getAppBaseUrl,
 } from "./env";
 
 let pass = 0,
@@ -111,6 +112,26 @@ console.log("\n=== Environment Helpers ===");
 {
   process.env.SOCRATA_APP_TOKEN = "tok_abc";
   ok("getSocrataAppToken() returns value when set", getSocrataAppToken() === "tok_abc");
+}
+
+// Test: getAppBaseUrl prefers explicit APP_BASE_URL (trailing slash trimmed)
+{
+  process.env.APP_BASE_URL = "https://gogreen.example.com/";
+  ok("getAppBaseUrl() uses APP_BASE_URL, trims slash", getAppBaseUrl() === "https://gogreen.example.com");
+}
+
+// Test: getAppBaseUrl falls back to VERCEL_URL (https://) when APP_BASE_URL unset
+{
+  delete process.env.APP_BASE_URL;
+  process.env.VERCEL_URL = "gogreen-abc123.vercel.app";
+  ok("getAppBaseUrl() falls back to https VERCEL_URL", getAppBaseUrl() === "https://gogreen-abc123.vercel.app");
+}
+
+// Test: getAppBaseUrl defaults to localhost in dev (neither set)
+{
+  delete process.env.APP_BASE_URL;
+  delete process.env.VERCEL_URL;
+  ok("getAppBaseUrl() defaults to localhost", getAppBaseUrl() === "http://localhost:3000");
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

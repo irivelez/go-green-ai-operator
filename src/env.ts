@@ -2,6 +2,19 @@
 // Spec: §A.2 (geo-measurement pipeline), §A.10 (pricing calibration).
 
 /**
+ * Public base URL of the deployed app — used to build ABSOLUTE Stripe success/cancel
+ * URLs that must point at the real domain, not localhost (go-live G2). Prefers an
+ * explicit APP_BASE_URL (your custom domain); falls back to Vercel's per-deploy
+ * VERCEL_URL, then localhost for dev. Trailing slashes trimmed.
+ */
+export function getAppBaseUrl(): string {
+  const explicit = process.env.APP_BASE_URL?.replace(/\/+$/, "");
+  if (explicit) return explicit;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
+/**
  * Get Google Maps server-side API key (restricted to Address Validation + Solar + Elevation + Places).
  * Used server-side only; never exposed to client.
  * Spec: §A.2 — Address Validation API, Solar buildingInsights:findClosest, Elevation API.

@@ -52,7 +52,7 @@ smoke test.**
 | # | Commit | Impact | Status |
 |---|---|---|---|
 | G1 | store prod-safety guard (`prodStoreBackendError`, VERCEL-keyed) + `.env.example` KV block + `store.test.ts` | behavior-changing | **done** (17/17 suites) |
-| G2 | post-payment return+resume: `APP_BASE_URL` → success/cancel URLs + leadId persist + `?checkout=success` resume | behavior-changing | todo |
+| G2 | post-payment return+resume: `APP_BASE_URL` → success/cancel URLs + leadId persist + `?checkout=success` resume | behavior-changing | **done** (`checkout-return.ts`+`getAppBaseUrl`; 18/18 suites; build green) |
 | G3 | rate-limit + per-lead daily cap on `/api/funnel/agent` (`@upstash/ratelimit`) → 429 | behavior-changing | todo |
 | G4 | interim `middleware.ts` basic-auth over `/` + `/api/leads/*` + `/api/operator` (funnel/webhook open) | behavior-changing | todo |
 | G5 | prod env+headers: model default note, security headers, optional `vercel.json` | preserving | todo |

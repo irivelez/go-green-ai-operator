@@ -18,6 +18,7 @@
 
 import Stripe from "stripe";
 import { PRICE_BOOK, FREQUENCY_MULTIPLIER, addOnById, type Tier, type Frequency } from "./contract";
+import { getAppBaseUrl } from "./env";
 import { upsertLead, actionSeen, getLead } from "./store";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,9 +173,15 @@ export async function createSubscriptionCheckout(input: CreateCheckoutInput): Pr
     },
   }));
 
+  // Absolute return URLs MUST point at the real domain (getAppBaseUrl: APP_BASE_URL
+  // → VERCEL_URL → localhost). The lead id is embedded so the chat can resume to
+  // booking after the Stripe round-trip — including the FB/IG in-app browser, where
+  // the "new tab" is the same webview navigating in place (go-live G2).
+  const base = getAppBaseUrl();
+  const leadParam = encodeURIComponent(input.leadId ?? "");
   const successUrl =
-    input.successUrl ?? "http://localhost:3000/agent?checkout=success&session_id={CHECKOUT_SESSION_ID}";
-  const cancelUrl = input.cancelUrl ?? "http://localhost:3000/agent?checkout=cancelled";
+    input.successUrl ?? `${base}/agent?checkout=success&lead=${leadParam}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = input.cancelUrl ?? `${base}/agent?checkout=cancelled&lead=${leadParam}`;
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",

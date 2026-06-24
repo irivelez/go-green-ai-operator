@@ -9,6 +9,7 @@ import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
 import { newWebLeadId } from "@/src/id";
+import { parseCheckoutReturn } from "@/src/checkout-return";
 import type { Tier, SlotOffer, VisionAssessment } from "@/src/contract";
 import type {
   QualifyResult,
@@ -36,6 +37,10 @@ import {
 import { AreaConfirmCard } from "./AreaConfirmCard";
 import type { LatLng } from "@/src/area-card-logic";
 
+// Survives the Stripe round-trip so a same-tab return (the FB/IG in-app browser,
+// which navigates in place) can recover the lead even without the URL param.
+const LEAD_STORE_KEY = "gg_lead_id";
+
 const COPY = {
   en: {
     greeting:
@@ -61,6 +66,7 @@ const COPY = {
     areaPostFailed: "I couldn't save the area — let me try again in a moment.",
     addressYes: "Yes, use that address.",
     addressNo: "Let me re-enter my address.",
+    checkoutReturnResume: "I've completed payment — please confirm my booking and show my visit times.",
   },
   es: {
     greeting:
@@ -86,6 +92,7 @@ const COPY = {
     areaPostFailed: "No pude guardar el área — déjame intentarlo de nuevo.",
     addressYes: "Sí, usa esa dirección.",
     addressNo: "Déjame corregir mi dirección.",
+    checkoutReturnResume: "Ya completé el pago — por favor confirma mi reserva y muéstrame los horarios disponibles.",
   },
 } satisfies Record<Lang, Record<string, unknown>>;
 
@@ -172,6 +179,28 @@ export function GenerativeChat({ language }: { language: Lang }) {
     if (!text.trim()) return;
     void append({ role: "user", content: text }, { body: body() });
   };
+
+  // Post-payment return (go-live G2). On a Stripe return the success_url carries
+  // ?checkout=success&lead=<id>; restore that lead and nudge the agent to resume —
+  // it re-reads the lead from the shared store (paid_at set by the webhook) and
+  // moves to booking. The transcript needn't survive; the lead state in KV is
+  // authoritative. On a normal load, just persist the id so a same-tab round trip
+  // (FB/IG in-app browser) can recover it. Runs once.
+  const returnHandled = useRef(false);
+  useEffect(() => {
+    if (returnHandled.current || typeof window === "undefined") return;
+    returnHandled.current = true;
+    const stored = window.localStorage.getItem(LEAD_STORE_KEY);
+    const ret = parseCheckoutReturn(window.location.search, stored);
+    if (ret.leadId && (ret.isSuccess || ret.isCancelled)) {
+      leadIdRef.current = ret.leadId;
+      window.localStorage.setItem(LEAD_STORE_KEY, ret.leadId);
+      window.history.replaceState(null, "", window.location.pathname);
+      if (ret.isSuccess) send(c.checkoutReturnResume);
+    } else {
+      window.localStorage.setItem(LEAD_STORE_KEY, leadIdRef.current);
+    }
+  }, []);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
