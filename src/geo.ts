@@ -240,6 +240,11 @@ export type SlopeResult =
 const DEG_LAT_M = 111319.5; // meters per degree of latitude (mean Earth)
 const SLOPE_OFFSET_DEG = 0.000225; // ~25m at mid-latitudes
 
+// Max adjacent grade % still counted as each tier (feeds SLOPE_MULTIPLIER pricing).
+// Coarse by design — the 3×3 Elevation grid can under-read terraced SF backyards (§A.3).
+const SLOPE_FLAT_MAX_PCT = 5;
+const SLOPE_MODERATE_MAX_PCT = 12;
+
 export async function slopeGradeTier(lat: number, lng: number): Promise<SlopeResult> {
   const key = getGoogleServerKey();
   if (!key) return { ok: false, reason: "no_key" };
@@ -298,7 +303,7 @@ export async function slopeGradeTier(lat: number, lng: number): Promise<SlopeRes
       }
     }
     const slope_tier: "flat" | "moderate" | "steep" =
-      maxPct < 5 ? "flat" : maxPct <= 12 ? "moderate" : "steep";
+      maxPct < SLOPE_FLAT_MAX_PCT ? "flat" : maxPct <= SLOPE_MODERATE_MAX_PCT ? "moderate" : "steep";
     return { ok: true, slope_tier, max_grade_pct: maxPct, sampled: 9 };
   } catch (e) {
     console.error("[geo] slopeGradeTier error:", (e as Error).message);

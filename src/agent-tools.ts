@@ -119,6 +119,9 @@ export interface RecommendTierResult {
   reason: string;
 }
 
+// How many PRICE_BOOK inclusions to surface (recommend card + work order).
+const MAX_TIER_INCLUDES = 6;
+
 export async function runRecommendTier(
   ctx: ToolContext,
   args: { tier: Tier; reason: string },
@@ -136,7 +139,7 @@ export async function runRecommendTier(
     name: spec.name,
     perVisit: spec.perVisit, // authoritative — from the contract, not the model
     blurb: spec.blurb,
-    includes: spec.includes.slice(0, 6),
+    includes: spec.includes.slice(0, MAX_TIER_INCLUDES),
     options: TIER_ORDER.map((id) => ({
       tier: id,
       name: PRICE_BOOK[id].name,
@@ -658,7 +661,7 @@ export async function runComputeExactPrice(
     perVisit: r.perVisit,
     monthly: r.monthly,
     tier_name: spec.name,
-    tier_inclusions: spec.includes.slice(0, 6),
+    tier_inclusions: spec.includes.slice(0, MAX_TIER_INCLUDES),
     currency: "USD",
   };
 }

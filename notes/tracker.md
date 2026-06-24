@@ -40,7 +40,7 @@ gate names the full path set explicitly (recon Step 1).
 |---|---|---|---|---|
 | 0 | Recon / bootstrap | done | | gate discovered; architecture ref + 5 registries written; baseline 17/17 green, tsc 0 |
 | 1 | Subtract dead code | done | | 5 removals, −56/+0: `confirmPayment` (stripe.ts), `RoofBbox` (area-card-logic), `getDict` (i18n), `fmtLAtime`+`LA_TIME` (format), unused `SlopePhotoPromptCard` import (GenerativeChat). Gate green. |
-| 2 | Magic literals → constants | pending | | |
+| 2 | Magic literals → constants | done | | 5 consts, selective: `SLOPE_FLAT_MAX_PCT`/`SLOPE_MODERATE_MAX_PCT` (geo:301, pricing-bearing), `REASON_CODE_MAX` (×2, hitl) + `CORRECTED_VALUE_MAX`, `MAX_TIER_INCLUDES` (×2, agent-tools). Skipped 3×3-grid 3/2/9 (idiomatic) + `maxSteps:8` (key self-names). Gate green. |
 | 3 | DRY (within a system) | pending | | |
 | 4 | Dead code, 2nd pass | pending | | |
 | 5 | Identify variables | pending | | notes-only |
