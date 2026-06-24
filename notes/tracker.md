@@ -49,7 +49,7 @@ gate names the full path set explicitly (recon Step 1).
 | 8 | Identify functions/params | done | | notes/renames.md Phase 8 — 1 candidate F1 `frEs`→`frequencyEs` (private, operator.ts). Typed single-letter params + callback params left (type annotation suffices). |
 | 9 | Propose function names | done | | `frEs→frequencyEs` approved (no collision, private, no misdirection) |
 | 10 | Apply function renames | done | | `frEs→frequencyEs` (operator.ts, 2 sites incl. template call). Trifecta: old token gone, symmetric 2/2, gate green. |
-| 11 | Classes & file names | pending | | may be "empty surface" |
+| 11 | Classes & file names | done | | **Empty surface** (valid). Classes (MemoryBackend/JsonBackend/KvBackend) + ~50 types + filenames all clear; data types are frozen boundaries; prompt-trio/tools split is doc-referenced + build-significant → leave. No code change. |
 | 12 | Clean comments/docstrings | pending | | default-KEEP; diff review |
 | 13 | Research legibility techniques | pending | | notes-only; fact-checked |
 | 14 | Self-onboarding capstone | pending | | doc + fresh-context eval |

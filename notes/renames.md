@@ -78,3 +78,19 @@ and already good — high churn, no gain — so left. Exactly ONE genuinely cryp
 
 No sibling same-named function exists to wrongly merge. Apply in Phase 10 (2 sites: def + the `${frEs(…)}` template
 call, both tsc-checked).
+
+## Phase 10 — function APPLY (done)
+`frEs→frequencyEs` applied; trifecta clean (old token gone, `frequencyEs` ×2, symmetric 2/2, gate green).
+
+## Phase 11 — classes & files: EMPTY SURFACE (valid outcome)
+
+Boundary-critic inventory found nothing worth the (widest) blast radius:
+- **Classes:** `MemoryBackend` / `JsonBackend` / `KvBackend` (`store.ts`) — all clear, implement `Backend`. No rename.
+- **Types/interfaces (~50):** uniformly clear, consistent `XxxInput/XxxResult/XxxOutput` convention. The data types
+  (`Lead`, `LeadEvent`, `VisionAssessment`, `LeadStatus`, tier ids) are serialized **frozen boundaries** (registry A).
+- **Filenames:** all descriptive. The only mild ambiguity — the prompt trio (`prompt.ts` master voice /
+  `funnel-prompt.ts` base / `funnel-agent-prompt.ts` V2 agent) and `tools.ts` (legacy) vs `agent-tools.ts` (V2) — is
+  each distinguishable AND **doc-referenced** (AGENTS.md / HANDOFF / spec) AND build-significant (import paths).
+  Renaming = widest blast radius + doc desync for ~0 legibility gain. **Left as-is.**
+
+No code change. Gate unchanged (green from Phase 10).
