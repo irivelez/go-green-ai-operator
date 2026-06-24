@@ -9,7 +9,6 @@
 import {
   runQualify,
   runRecommendTier,
-  runComputePricing,
   runProposeCheckout,
   runOfferSlots,
   runConfirmBooking,
@@ -87,27 +86,6 @@ console.log("\n=== S4: recommend_tier — server re-derives from PRICE_BOOK, ign
   ok("returns all 3 tier options for the card", r.options.length === 3, `got ${r.options.length}`);
   ok("options carry authoritative prices", r.options.every((o) => o.perVisit === PRICE_BOOK[o.tier].perVisit));
   ok("reason preserved", r.reason.length > 0);
-}
-
-console.log("\n=== S2: compute_pricing — all numbers server-derived; open-ended never charged ===");
-{
-  resetStore([]);
-  const r = await runComputePricing(ctx("L3"), {
-    tier: "signature",
-    frequency: "biweekly",
-    addOnIds: ["fertilization", "hand-weeding"], // fertilization fixed $95, hand-weeding open-ended
-  });
-  ok("no error", !("error" in r), JSON.stringify(r));
-  if (!("error" in r)) {
-    ok("monthlyRecurring = 299*2.17 = 648.83", approxEq(r.monthlyRecurring, 648.83), `got ${r.monthlyRecurring}`);
-    ok("1 fixed line item (fertilization)", r.fixedAddOnLineItems.length === 1 && r.fixedAddOnLineItems[0]?.addOnId === "fertilization");
-    ok("hand-weeding flagged open-ended (NOT charged)", r.openEndedFlagged.some((x) => x.addOnId === "hand-weeding"));
-    const expected = monthlyFromVisit("signature", "biweekly") + 95;
-    ok(`firstChargeTotal = monthly + 95 = ${expected}`, approxEq(r.firstChargeTotal, expected), `got ${r.firstChargeTotal}`);
-  }
-  // unknown id → structured error, never a throw that kills the stream
-  const bad = await runComputePricing(ctx("L3"), { tier: "essential", frequency: "monthly", addOnIds: ["nope-not-real"] });
-  ok("unknown add-on → structured error (no throw)", "error" in bad, JSON.stringify(bad));
 }
 
 console.log("\n=== S3: propose_checkout — address gate + photos gate + NEVER charges ===");

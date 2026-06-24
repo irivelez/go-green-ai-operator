@@ -214,7 +214,7 @@ function MapSurface({ result, center, lang, onConfirm }: AreaConfirmCardProps) {
         </button>
       </div>
       <div className="border-t border-moss-100 px-4 py-2 text-[10.5px] italic text-moss-700/55">
-        {/* Subtle hint that the price is still confirmed on-site (matches QuoteCard footer). */}
+        {/* Subtle hint that the price is still confirmed on-site (matches ExactPriceCard footer). */}
         Final price confirmed on-site after the first visit.
       </div>
     </div>

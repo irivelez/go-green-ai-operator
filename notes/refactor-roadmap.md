@@ -23,8 +23,8 @@ after EPIC 4 + at the end. One logical change per commit. Update the row below a
 | 3a | `newWebLeadId()` (DEDUP-11) | 3 | preserving | **done** |
 | 3b | `withBody`/`ownerActionRoute` route wrappers (DEDUP-03) | 3 | preserving | **done** |
 | 6a | shared agent dict + `lib/format.ts` (DEDUP-10) | 6 | preserving | pending |
-| 5a | PAID_STATES gate-bypass hardening + test | 5 | behavior-changing | pending |
-| 5b | retire flat pricing path (compute_pricing/priceCart) | 5 | behavior-changing | pending |
+| 5a | PAID_STATES gate-bypass hardening + test | 5 | behavior-changing | **done** 825272c |
+| 5b | retire flat pricing path (compute_pricing/priceCart) | 5 | behavior-changing | **done** |
 | 7a | split `agent-tools.ts` → per-stage modules (re-export) | 7 | preserving | pending |
 
 ## Do NOT touch

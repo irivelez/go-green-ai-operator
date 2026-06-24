@@ -162,29 +162,6 @@ export async function runRecommendTier(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// compute_pricing — all numbers from priceCart; unknown id → structured error
-// ─────────────────────────────────────────────────────────────────────────────
-
-const ComputePricingArgsSchema = z.object({
-  tier: TierEnum,
-  frequency: FrequencyEnum,
-  addOnIds: z.array(z.string()).default([]).describe("Add-on ids the customer selected"),
-});
-
-export async function runComputePricing(
-  _ctx: ToolContext,
-  args: z.infer<typeof ComputePricingArgsSchema>,
-): Promise<PricingResult | { error: string }> {
-  // Marked async for uniform run* handler shape. Pure compute — does not touch
-  // the store, so there is no await inside. Callers always await.
-  try {
-    return priceCart({ tier: args.tier, frequency: args.frequency, addOnIds: args.addOnIds });
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // propose_checkout — address + photos gates; computes the authoritative amount;
 // NEVER charges. With a Stripe key the tool's execute() stages a Checkout URL.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -812,13 +789,6 @@ export function buildTools(ctx: ToolContext) {
         "Recommend ONE care tier (essential/signature/estate) for the customer to confirm, with a short reason. Returns the authoritative pricing and all three options to display as cards.",
       parameters: RecommendTierArgsSchema,
       execute: async (args) => runRecommendTier(ctx, args),
-    }),
-
-    compute_pricing: tool({
-      description:
-        "Compute the exact, authoritative price for a tier + frequency + selected add-ons. Open-ended add-ons are listed separately and never charged. Always use this before checkout — never quote a number yourself.",
-      parameters: ComputePricingArgsSchema,
-      execute: async (args) => runComputePricing(ctx, args),
     }),
 
     validate_address: tool({

@@ -18,7 +18,7 @@ import {
   Mountain,
   Camera,
 } from "lucide-react";
-import { PRICE_BOOK, type Tier, type SlotOffer, type PricingResult } from "@/src/contract";
+import { PRICE_BOOK, type Tier, type SlotOffer } from "@/src/contract";
 import type {
   QualifyResult,
   RecommendTierResult,
@@ -206,51 +206,6 @@ export function TierOptionsCard({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ── quote (compute_pricing) ─────────────────────────────────────────────────────
-export function QuoteCard({ lang, p }: { lang: Lang; p: PricingResult }) {
-  const t = L[lang];
-  return (
-    <Shell>
-      <div className="flex items-baseline justify-between gap-3 border-b border-moss-100 bg-paper/40 px-4 py-3">
-        <div className="font-display text-[17px] text-bark-900">
-          {PRICE_BOOK[p.tier].name}
-          <span className="ml-2 text-[12px] font-sans capitalize text-moss-700/70">{p.frequency}</span>
-        </div>
-        <div className="text-right">
-          <div className="font-display text-2xl font-medium text-bark-900">{money(p.firstChargeTotal)}</div>
-          <div className="text-[10px] uppercase tracking-[0.12em] text-moss-700/60">{t.firstCharge}</div>
-        </div>
-      </div>
-      <div className="space-y-1.5 px-4 py-3 text-[12.5px]">
-        <Row label={`${PRICE_BOOK[p.tier].name} · ${p.frequency}`} value={`${money(p.monthlyRecurring)} ${t.monthly.toLowerCase()}`} />
-        {p.fixedAddOnLineItems.map((li) => (
-          <Row key={li.addOnId} label={li.name} value={money(li.amount)} muted />
-        ))}
-        {p.openEndedFlagged.length > 0 && (
-          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-[11.5px] text-amber-900">
-            <div className="font-medium">{t.addOns}: {t.needsQuote}</div>
-            <ul className="mt-1 list-inside list-disc marker:text-amber-400">
-              {p.openEndedFlagged.map((o) => (
-                <li key={o.addOnId}>{o.name}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-      <div className="border-t border-moss-100 px-4 py-2 text-[10.5px] italic text-moss-700/55">{t.onSite}</div>
-    </Shell>
-  );
-}
-
-function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className={muted ? "text-moss-700/70" : "text-bark-900"}>{label}</span>
-      <span className={muted ? "text-moss-700/70" : "font-medium text-bark-900"}>{value}</span>
     </div>
   );
 }
@@ -481,8 +436,8 @@ export function SlopePhotoPromptCard({
 }
 
 // ── exact price (compute_exact_price — spec §A.4) ───────────────────────────────
-// ONE exact per-visit number derived from confirmed_sqft × slope_tier (NOT a range —
-// the range surface is QuoteCard). Final confirmation still happens on-site.
+// ONE exact per-visit number derived from confirmed_sqft × slope_tier. Final
+// confirmation still happens on-site.
 export function ExactPriceCard({
   result,
   lang,

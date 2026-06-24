@@ -9,7 +9,7 @@ import { useChat } from "@ai-sdk/react";
 import type { Message } from "ai";
 import { ImagePlus, SendHorizonal, Sparkles, Loader2 } from "lucide-react";
 import { newWebLeadId } from "@/src/id";
-import type { Tier, SlotOffer, PricingResult, VisionAssessment } from "@/src/contract";
+import type { Tier, SlotOffer, VisionAssessment } from "@/src/contract";
 import type {
   QualifyResult,
   RecommendTierResult,
@@ -25,7 +25,6 @@ import {
   type Lang,
   QualifyCard,
   TierOptionsCard,
-  QuoteCard,
   CheckoutCard,
   SlotPickerCard,
   ConfirmationCard,
@@ -49,7 +48,6 @@ const COPY = {
     bookSlot: (when: string, id: string) => `Please book ${when} (slot ${id}).`,
     checking: "Checking your service area",
     analyzing: "Looking at your photos",
-    pricing: "Pricing your plan",
     staging: "Preparing secure checkout",
     finding: "Finding open visits",
     booking: "Locking your booking",
@@ -76,7 +74,6 @@ const COPY = {
     bookSlot: (when: string, id: string) => `Por favor reserva ${when} (espacio ${id}).`,
     checking: "Verificando tu zona de servicio",
     analyzing: "Revisando tus fotos",
-    pricing: "Calculando tu plan",
     staging: "Preparando el pago seguro",
     finding: "Buscando visitas disponibles",
     booking: "Confirmando tu reserva",
@@ -108,7 +105,6 @@ type ToolResultMap = {
   qualify_lead: QualifyResult;
   analyze_photos: VisionAssessment;
   recommend_tier: RecommendTierResult;
-  compute_pricing: PricingResult | { error: string };
   propose_checkout: ProposeCheckoutResult;
   offer_slots: SlotOffer[];
   confirm_booking: ConfirmBookingResult;
@@ -204,7 +200,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
     switch (name) {
       case "qualify_lead": return c.checking;
       case "analyze_photos": return c.analyzing;
-      case "compute_pricing": return c.pricing;
       case "propose_checkout": return c.staging;
       case "offer_slots": return c.finding;
       case "confirm_booking": return c.booking;
@@ -257,11 +252,6 @@ export function GenerativeChat({ language }: { language: Lang }) {
             }}
           />
         );
-      case "compute_pricing": {
-        const p = toolResult(tp, "compute_pricing");
-        if ("error" in p) return null;
-        return <QuoteCard key={key} lang={language} p={p} />;
-      }
       case "propose_checkout":
         return <CheckoutCard key={key} lang={language} r={toolResult(tp, "propose_checkout")} />;
       case "offer_slots":
