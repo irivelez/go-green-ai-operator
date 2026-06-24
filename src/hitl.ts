@@ -14,7 +14,7 @@
 //   { field: "area"|"slope"|"address"|"price"|"decision" }
 
 import { z } from "zod";
-import { getLead, upsertLead, appendEvent, type Lead, type LeadEvent } from "./store";
+import { getLead, upsertLead, appendEvent, allLeads, type Lead, type LeadEvent } from "./store";
 import { tool_book_evaluation, tool_create_work_order } from "./tools";
 import { nextSlots } from "./operator";
 
@@ -104,7 +104,7 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
   // 2) Preserve existing approve-route behavior (status flip / booking).
   const stamp = `[human] approved ${new Date().toISOString()}`;
 
-  if (lead.status === "Ready to Schedule" && lead.address) {
+  if ((lead.status === "PAID" || lead.status === "BOOKED") && lead.address) {
     const slot = nextSlots()[0]!;
     const booked = await tool_book_evaluation({ ...lead, address: lead.address }, slot);
     if (booked.ok) {
@@ -120,7 +120,7 @@ export async function handleApprove(id: string, body: OwnerActionBody): Promise<
 
   const updated = await upsertLead({
     lead_id: id, channel: lead.channel,
-    status: "Ready to Schedule",
+    status: "ACTIVE",
     internal_notes: `${lead.internal_notes ?? ""}\n${stamp} — agent resumes.`,
   });
   return { ok: true, lead: updated };
@@ -142,10 +142,82 @@ export async function handleReject(id: string, body: OwnerActionBody): Promise<H
 
   const updated = await upsertLead({
     lead_id: id, channel: lead.channel,
-    status: "Not a Fit",
+    status: "DEAD",
     internal_notes: `${lead.internal_notes ?? ""}\n[human] declined ${new Date().toISOString()}.`,
   });
   return { ok: true, lead: updated };
+}
+
+// Escalation board = the set of ESCALATED leads. The timeout sweep ADDS a
+// customer fallback for unacked leads; resolveEscalation REMOVES a lead (sets
+// ACTIVE to resume the funnel, or PAUSED to park it) and acks the board entry.
+export async function resolveEscalation(
+  id: string,
+  opts: { park?: boolean; reason_code?: string } = {},
+): Promise<HandlerResult> {
+  const lead = await getLead(id);
+  if (!lead) return { ok: false, error: "not found" };
+
+  await appendEvent(id, {
+    actor: "owner",
+    action: "resolve_escalation",
+    reason_code: opts.reason_code,
+    agent_decision: snapshot(lead).agent_decision,
+    inputs: snapshot(lead).inputs,
+  });
+
+  const updated = await upsertLead({
+    lead_id: id,
+    channel: lead.channel,
+    status: opts.park ? "PAUSED" : "ACTIVE",
+    escalation_acked: true,
+  });
+  return { ok: true, lead: updated };
+}
+
+// Threshold: an ESCALATED lead unacked for longer than this gets a customer
+// fallback message + stays on the board for the owner.
+const ESCALATION_TIMEOUT_MS = Number(process.env.ESCALATION_TIMEOUT_MS ?? 30 * 60 * 1000);
+
+export interface SweepResult {
+  swept: string[];
+  board: string[];
+}
+
+// Sweep skips PAUSED (owner handling) and already-acked leads (Metis M1/M2); the
+// fallback fires once, made idempotent by setting escalation_acked.
+export async function sweepEscalations(now = Date.now()): Promise<SweepResult> {
+  const leads = await allLeads();
+  const swept: string[] = [];
+  const board: string[] = [];
+  for (const lead of leads) {
+    if (lead.status !== "ESCALATED") continue;
+    board.push(lead.lead_id);
+    if (lead.escalation_acked) continue;
+    const since = lead.escalated_at ? Date.parse(lead.escalated_at) : Date.parse(lead.created_at);
+    if (!Number.isFinite(since) || now - since < ESCALATION_TIMEOUT_MS) continue;
+
+    await appendEvent(lead.lead_id, {
+      actor: "system",
+      action: "escalation_timeout_fallback",
+      inputs: { waited_ms: now - since },
+    });
+    await upsertLead({
+      lead_id: lead.lead_id,
+      channel: lead.channel,
+      escalation_acked: true,
+      internal_notes: [
+        lead.internal_notes,
+        `[system] ${new Date(now).toISOString()} — escalation unacked >${Math.round(
+          ESCALATION_TIMEOUT_MS / 60000,
+        )}min; customer sent a hold message.`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+    swept.push(lead.lead_id);
+  }
+  return { swept, board };
 }
 
 export async function handleOverride(id: string, body: OverrideBody): Promise<OverrideResult> {

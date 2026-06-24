@@ -7,6 +7,8 @@
 
 import { Composio } from "@composio/core";
 import { getGoogleCalendarId } from "./env";
+import { allLeads } from "./store";
+import { actionSeen, actionAlreadySeen } from "./store";
 
 let _client: Composio | null = null;
 function client(apiKey: string): Composio {
@@ -113,4 +115,67 @@ export async function createCrewEvent(
     console.error("[calendar] crew event error:", msg);
     return { ok: false, reason: msg };
   }
+}
+
+// One-way daily GCal export (todo 18): mirror today's BOOKED visits to the owner
+// calendar. The local slot ledger stays the SOLE source of truth — this is a
+// read-only owner-visibility mirror, NOT bidirectional sync (V1.1). Idempotent on
+// the visit/slot id so a re-run never double-creates. Gated by CREW_CALENDAR_ENABLED
+// (createCrewEvent enforces the gate); a missing key/flag → clean no-op.
+export interface GcalExportResult {
+  exported: number;
+  skipped: number;
+}
+
+function isToday(visitIso: string, now: number): boolean {
+  const day = (ms: number) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+      new Date(ms),
+    );
+  const v = Date.parse(visitIso);
+  return Number.isFinite(v) && day(v) === day(now);
+}
+
+export async function exportTodaysVisits(now = Date.now()): Promise<GcalExportResult> {
+  const result: GcalExportResult = { exported: 0, skipped: 0 };
+  const leads = await allLeads();
+  for (const lead of leads) {
+    if (lead.status !== "BOOKED" || !lead.visit_at || !isToday(lead.visit_at, now)) continue;
+    const wo = (lead.work_order ?? {}) as Record<string, unknown>;
+    const slotId = typeof wo.slotId === "string" ? wo.slotId : lead.visit_at;
+    // Read-only idempotency pre-check (cross-model review S4): skip a visit that
+    // was ALREADY exported in a prior run, BEFORE calling createCrewEvent — else a
+    // re-run creates a DUPLICATE calendar event. The mark happens after success
+    // (S1), so an unexported-or-failed visit still gets attempted here.
+    if (await actionAlreadySeen(lead.lead_id, "gcal_export", slotId)) {
+      result.skipped++;
+      continue;
+    }
+    const endIso =
+      typeof wo.window === "string" && wo.window.includes("–")
+        ? wo.window.split("–")[1]!.trim()
+        : lead.visit_at;
+    const r = await createCrewEvent({
+      lead_id: lead.lead_id,
+      address: lead.address ?? "",
+      sqft: lead.confirmed_sqft ?? lead.estimated_sqft ?? 0,
+      slope_tier: lead.slope_tier ?? "flat",
+      tier_name: lead.suggested_package ?? "Maintenance",
+      start_iso: lead.visit_at,
+      end_iso: endIso,
+      paid: true,
+    });
+    if (!r.ok) {
+      // Gated off / unconfigured / transient failure → do NOT mark seen, so a
+      // future cron retries once keys land (Oracle S1: marking-before-success
+      // permanently skipped the visit on a transient no-op). Disabled is a clean
+      // no-op, not a skip-to-report.
+      if (r.reason !== "disabled" && r.reason !== "unconfigured") result.skipped++;
+      continue;
+    }
+    // Real create succeeded → NOW mark seen so the next cron run no-ops this visit.
+    await actionSeen(lead.lead_id, "gcal_export", slotId);
+    result.exported++;
+  }
+  return result;
 }

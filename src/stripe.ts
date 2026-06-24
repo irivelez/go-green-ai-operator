@@ -26,7 +26,11 @@ import {
   type Frequency,
   type CheckoutResult,
 } from "./contract";
-import { upsertLead, actionSeen, getLead } from "./store";
+import { upsertLead, actionSeen, getLead, getSharedRedis } from "./store";
+import { materializeCustomer } from "./customer";
+import { clearInFlight } from "./checkout-guard";
+import { updateJobStatus } from "./job";
+import { enqueueOwnerEscalation } from "./notify";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Client — test-mode by default, live-mode gated by STRIPE_LIVE_OK=1
@@ -115,6 +119,10 @@ export interface CreateCheckoutInput {
   measuredPerVisit?: number;
   successUrl?: string;
   cancelUrl?: string;
+  // Stripe Idempotency-Key (todo 7): two concurrent callers with the SAME key
+  // both reach Stripe and Stripe returns the SAME session — never a duplicate
+  // charge. This is the PRIMARY double-charge defense.
+  idempotencyKey?: string;
 }
 
 export interface CreateCheckoutOutput {
@@ -196,29 +204,32 @@ export async function createSubscriptionCheckout(
     input.successUrl ?? "http://localhost:3000/funnel/success?session_id={CHECKOUT_SESSION_ID}";
   const cancelUrl = input.cancelUrl ?? "http://localhost:3000/funnel/cancel";
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    line_items: [subscriptionLine, ...addOnLines],
-    customer_email: input.customer.email,
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    metadata: {
-      lead_id: input.leadId ?? "",
-      tier: input.tier,
-      frequency: input.frequency,
-      add_on_ids: resolved.map((a) => a.id).join(","),
-      customer_name: input.customer.name,
-      customer_phone: input.customer.phone,
-      customer_address: input.customer.address,
-    },
-    subscription_data: {
+  const session = await stripe.checkout.sessions.create(
+    {
+      mode: "subscription",
+      line_items: [subscriptionLine, ...addOnLines],
+      customer_email: input.customer.email,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       metadata: {
         lead_id: input.leadId ?? "",
         tier: input.tier,
         frequency: input.frequency,
+        add_on_ids: resolved.map((a) => a.id).join(","),
+        customer_name: input.customer.name,
+        customer_phone: input.customer.phone,
+        customer_address: input.customer.address,
+      },
+      subscription_data: {
+        metadata: {
+          lead_id: input.leadId ?? "",
+          tier: input.tier,
+          frequency: input.frequency,
+        },
       },
     },
-  });
+    input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+  );
 
   if (!session.url) {
     throw new Error("Stripe did not return a Checkout URL.");
@@ -262,6 +273,20 @@ export async function confirmPayment(sessionId: string): Promise<CheckoutResult>
   };
 }
 
+// Is a staged session expired? Stripe sessions live ~24h so the +24h/+72h
+// re-engagement emails can outlive them (todo 16 / Oracle Fix3). Returns true on
+// "expired" OR any retrieve failure — treat-unknown-as-dead so the worker
+// re-stages a fresh Checkout rather than emails a possibly-dead link.
+export async function checkoutSessionExpired(sessionId: string): Promise<boolean> {
+  if (!process.env.STRIPE_SECRET_KEY) return true;
+  try {
+    const session = await getStripeClient().checkout.sessions.retrieve(sessionId);
+    return session.status === "expired";
+  } catch {
+    return true;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Webhook handler — idempotent reducer
 // Exposed for app/api/stripe/webhook/route.ts to call.
@@ -287,22 +312,50 @@ export function constructWebhookEvent(rawBody: string | Buffer, signature: strin
 }
 
 /**
- * Reduce a verified Stripe event into our store. Idempotent per
- * (lead_id, "stripe.checkout.completed", sessionId).
+ * Reduce a verified Stripe event into our store. Dispatches the 3 V1 lifecycle
+ * events (todo 23): checkout.session.completed (lead→PAID + Customer ids),
+ * invoice.payment_failed (Job→past_due + owner escalation), and
+ * customer.subscription.deleted (Job→canceled). Each is idempotent.
  */
 export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebhookResult> {
-  if (event.type !== "checkout.session.completed") {
-    return { received: true, handled: false, reason: `ignored event type: ${event.type}` };
+  switch (event.type) {
+    case "checkout.session.completed":
+      return reduceCheckoutCompleted(event);
+    case "invoice.payment_failed":
+      return reduceInvoicePaymentFailed(event);
+    case "customer.subscription.deleted":
+      return reduceSubscriptionDeleted(event);
+    default:
+      return { received: true, handled: false, reason: `ignored event type: ${event.type}` };
   }
+}
 
+// Global event-id idempotency for the NEW lifecycle events (Oracle confirming
+// note): a single subscription fires MANY invoice.payment_failed events, and
+// these aren't lead-scoped, so keying on event.id globally is the correct
+// boundary — NOT the per-lead `_actions` ledger. SET NX EX 24h. No Upstash →
+// in-process Set (dev).
+const memSeenEvents = new Set<string>();
+async function eventAlreadySeen(eventId: string): Promise<boolean> {
+  const redis = getSharedRedis();
+  if (redis) {
+    const won = await redis.set(`stripe:event:${eventId}`, "1", { nx: true, ex: 86400 });
+    return won !== "OK";
+  }
+  if (memSeenEvents.has(eventId)) return true;
+  memSeenEvents.add(eventId);
+  return false;
+}
+
+async function reduceCheckoutCompleted(event: Stripe.Event): Promise<StripeWebhookResult> {
   const session = event.data.object as Stripe.Checkout.Session;
   const leadId = session.metadata?.lead_id;
   if (!leadId) {
     return { received: true, handled: false, reason: "no lead_id in session metadata" };
   }
 
-  // Idempotency on (lead_id, action, sessionId). actionSeen returns true
-  // on the SECOND call — so we early-return on duplicates.
+  // Idempotency on (lead_id, action, sessionId) — checkout keeps its existing
+  // session-id idempotency (it IS lead-scoped).
   if (await actionSeen(leadId, "stripe.checkout.completed", session.id)) {
     return { received: true, handled: false, reason: "duplicate event (already processed)" };
   }
@@ -316,7 +369,10 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebh
   await upsertLead({
     lead_id: leadId,
     channel: existing?.channel ?? "form",
-    status: "Ready to Schedule",
+    status: "PAID",
+    // Persist the REAL subscription id on the Lead (Oracle B2) so confirm_booking
+    // keys the Job off sub_… — the same id the lifecycle webhooks compute.
+    stripe_subscription_id: subscriptionId,
     internal_notes: [
       existing?.internal_notes,
       `Stripe checkout paid: session=${session.id} sub=${subscriptionId ?? "?"} amount_total=${session.amount_total ?? 0}`,
@@ -325,5 +381,70 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<StripeWebh
       .join("\n"),
   });
 
+  // The money IS collected, so we mark PAID — but a subscription checkout with no
+  // subscription id is anomalous (cross-model review S6). Without a sub id, the
+  // Job would fall back to the session id and the lifecycle webhooks (keyed on
+  // sub_…) would never find it. Escalate so the owner reconciles the recurring
+  // setup rather than silently shipping a broken subscription.
+  if (!subscriptionId) {
+    await enqueueOwnerEscalation({
+      lead_id: leadId,
+      channel: existing?.channel ?? "form",
+      reason: "paid_without_subscription_id",
+      brief: `Checkout ${session.id} completed + PAID, but Stripe returned NO subscription id. The recurring Job/webhook linkage is broken — owner must reconcile the subscription manually.`,
+    });
+  }
+
+  const customerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (existing?.customer_email) {
+    await materializeCustomer(existing.customer_email, {
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      status: "paid",
+    });
+  }
+
+  const email = existing?.customer_email ?? session.customer_email ?? undefined;
+  const tier = session.metadata?.tier;
+  const frequency = session.metadata?.frequency;
+  if (email && tier && frequency) {
+    await clearInFlight(email, tier, frequency);
+  }
+
+  return { received: true, handled: true };
+}
+
+async function reduceInvoicePaymentFailed(event: Stripe.Event): Promise<StripeWebhookResult> {
+  if (await eventAlreadySeen(event.id)) {
+    return { received: true, handled: false, reason: "duplicate event (already processed)" };
+  }
+  const invoice = event.data.object as Stripe.Invoice;
+  const subId =
+    typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+  if (!subId) return { received: true, handled: false, reason: "no subscription on invoice" };
+
+  // Mark the Job past_due (only if it EXISTS — updateJobStatus no longer creates
+  // an orphan, cross-model review S5) + escalate the owner via the durable queue.
+  const updated = await updateJobStatus(`job_${subId}`, "past_due");
+  await enqueueOwnerEscalation({
+    lead_id: `job_${subId}`,
+    channel: "form",
+    reason: "payment_failed",
+    brief: updated
+      ? `Subscription ${subId} invoice payment failed — Job marked past_due. Owner to follow up.`
+      : `Subscription ${subId} invoice payment failed but NO matching Job was found — owner must reconcile manually.`,
+  });
+  return { received: true, handled: true };
+}
+
+async function reduceSubscriptionDeleted(event: Stripe.Event): Promise<StripeWebhookResult> {
+  if (await eventAlreadySeen(event.id)) {
+    return { received: true, handled: false, reason: "duplicate event (already processed)" };
+  }
+  const sub = event.data.object as Stripe.Subscription;
+  // Mark the Job canceled — future visits/reminders no-op via the at-execute
+  // state check (the reminder handler skips non-active jobs/leads).
+  await updateJobStatus(`job_${sub.id}`, "canceled");
   return { received: true, handled: true };
 }

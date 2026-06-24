@@ -1,16 +1,13 @@
 // Shared client types — mirror the API contract exactly.
 
 export type LeadStatus =
-  | "New Lead"
-  | "Waiting for Info"
-  | "Info Received"
-  | "AI Qualified"
-  | "Ready to Schedule"
-  | "Scheduled"
-  | "Work Order Created"
-  | "Needs Human Review"
-  | "Not a Fit"
-  | "Lost / No Response";
+  | "ACTIVE"
+  | "PAUSED"
+  | "ESCALATED"
+  | "PAID"
+  | "BOOKED"
+  | "ABANDONED"
+  | "DEAD";
 
 export type Channel = "telegram" | "email" | "whatsapp" | "form";
 export type Language = "en" | "es";
@@ -44,6 +41,12 @@ export interface Lead {
   internal_notes?: string;
   created_at: string;
   first_response_at?: string;
+  customer_email?: string;
+  escalated_at?: string;
+  escalation_acked?: boolean;
+  slots_offered_at?: string;
+  work_order_created_at?: string;
+  lastEventTs?: string;
 }
 
 export interface Kpis {
@@ -91,14 +94,11 @@ export interface OperatorResponse {
 }
 
 export const STAGE_ORDER: LeadStatus[] = [
-  "New Lead",
-  "Waiting for Info",
-  "Info Received",
-  "AI Qualified",
-  "Ready to Schedule",
-  "Scheduled",
-  "Work Order Created",
-  "Needs Human Review",
-  "Not a Fit",
-  "Lost / No Response",
+  "ACTIVE",
+  "PAID",
+  "BOOKED",
+  "ESCALATED",
+  "PAUSED",
+  "ABANDONED",
+  "DEAD",
 ];

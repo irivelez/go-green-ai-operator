@@ -5,6 +5,7 @@
 // feel like a product (Linear/Vercel bar) rather than a chatbot: the model calls a
 // tool, the deterministic engine returns structured data, and that data becomes UI.
 
+import { useEffect, useRef } from "react";
 import {
   Check,
   Sparkles,
@@ -28,6 +29,7 @@ import type {
   ValidateAddressToolResult,
   ComputeExactPriceResult,
 } from "@/src/agent-tools";
+import { trackPixel } from "@/app/components/MetaPixel";
 
 export type Lang = "en" | "es";
 
@@ -258,6 +260,18 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
 // ── checkout (propose_checkout) ─────────────────────────────────────────────────
 export function CheckoutCard({ lang, r }: { lang: Lang; r: ProposeCheckoutResult }) {
   const t = L[lang];
+  // Fire InitiateCheckout ONCE per staged checkout. Ref guards StrictMode
+  // double-mount + parent re-renders; new propose_checkout result = new card key
+  // = new ref, so each real checkout still fires exactly once.
+  const firedInitiateCheckout = useRef(false);
+  useEffect(() => {
+    if (firedInitiateCheckout.current) return;
+    if (r.status !== "ready" || !r.url) return;
+    firedInitiateCheckout.current = true;
+    const params: { currency: string; value?: number } = { currency: r.currency ?? "USD" };
+    if (typeof r.amount === "number") params.value = r.amount;
+    trackPixel("InitiateCheckout", params);
+  }, [r]);
   if (r.status === "missing_address" || r.status === "missing_photos" || r.status === "error") {
     return null; // the model surfaces these as conversational text
   }

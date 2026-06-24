@@ -19,12 +19,15 @@ import {
   runConfirmArea,
   runComputeExactPrice,
   runAnalyzePhotos,
+  runRecognizeCustomer,
+  runApplyReturningCustomer,
   type ToolContext,
 } from "./agent-tools";
 import { PRICE_BOOK, monthlyFromVisit } from "./contract";
 import { pricePerVisit } from "./pricing";
 import { resetStore, upsertLead, getLead } from "./store";
 import { resetSlots } from "./scheduler";
+import { resetCustomers, materializeCustomer } from "./customer";
 
 let pass = 0,
   fail = 0;
@@ -160,7 +163,7 @@ console.log("\n=== confirm_booking — payment gate (no booking before paid) ===
 {
   resetStore([]);
   resetSlots();
-  await upsertLead({ lead_id: "L5", channel: "form", photos: ["x"], status: "AI Qualified" });
+  await upsertLead({ lead_id: "L5", channel: "form", photos: ["x"], status: "ACTIVE" });
   const slots = await runOfferSlots(ctx("L5"));
   ok("offer_slots returns availability", Array.isArray(slots) && slots.length > 0, `got ${Array.isArray(slots) ? slots.length : typeof slots}`);
   const firstSlot = slots[0]!.slotId;
@@ -168,10 +171,10 @@ console.log("\n=== confirm_booking — payment gate (no booking before paid) ===
   ok("unpaid lead → booking refused (payment_required)", blocked.status === "payment_required", JSON.stringify(blocked));
 
   // Simulate webhook flipping the lead to paid.
-  await upsertLead({ lead_id: "L5", channel: "form", status: "Ready to Schedule" });
+  await upsertLead({ lead_id: "L5", channel: "form", status: "PAID" });
   const booked = await runConfirmBooking(ctx("L5"), { slotId: firstSlot });
   ok("paid lead → booking succeeds", booked.status === "booked", JSON.stringify(booked));
-  ok("lead moved to Scheduled", (await getLead("L5"))?.status === "Scheduled" || (await getLead("L5"))?.status === "Work Order Created");
+  ok("lead moved to BOOKED", (await getLead("L5"))?.status === "BOOKED");
 }
 
 console.log("\n=== raise_escalation — marks lead, blocks auto-charge ===");
@@ -185,7 +188,7 @@ console.log("\n=== raise_escalation — marks lead, blocks auto-charge ===");
   });
   ok("escalation returns escalated true", esc.escalated === true);
   ok("autoChargeBlocked true", esc.autoChargeBlocked === true);
-  ok("lead status → Needs Human Review", (await getLead("L6"))?.status === "Needs Human Review", (await getLead("L6"))?.status);
+  ok("lead status → ESCALATED", (await getLead("L6"))?.status === "ESCALATED", (await getLead("L6"))?.status);
 }
 
 console.log("\n=== T10.a: validate_address — no Google key → graceful error, never throws ===");
@@ -738,6 +741,17 @@ console.log("\n=== SEC-E: analyze_photos — LLM-supplied unsafe photoUrls are n
   ok("safe data: url retained", photos.some((p) => p.startsWith("data:image/")));
 }
 
+console.log("\n=== A10: vision confidence below floor → forced escalation (deterministic) ===");
+{
+  resetStore([]);
+  delete process.env.ANTHROPIC_API_KEY; // no key → analyzeYardPhotos returns confidence 0
+  await upsertLead({ lead_id: "L_VC", channel: "form", photos: ["data:image/png;base64,QQ=="] });
+  const r = (await runAnalyzePhotos(ctx("L_VC"), {})) as { confidence: number; forcedEscalation?: boolean };
+  ok("low-confidence assessment forces escalation flag", r.forcedEscalation === true, JSON.stringify({ confidence: r.confidence, forced: r.forcedEscalation }));
+  ok("lead status → ESCALATED (loop forced, not LLM choice)", (await getLead("L_VC"))?.status === "ESCALATED", (await getLead("L_VC"))?.status);
+  ok("escalation reason = low_vision_confidence", (await getLead("L_VC"))?.escalation_reason === "low_vision_confidence");
+}
+
 console.log("\n=== T10.d: compute_exact_price — missing confirmed_sqft → structured refusal ===");
 {
   resetStore([]);
@@ -913,7 +927,7 @@ console.log("\n=== T10.f: confirm_booking — calendar wire is fire-and-forget; 
     lead_id: "L12",
     channel: "form",
     photos: ["x"],
-    status: "Ready to Schedule",
+    status: "PAID",
     address: "123 Main St, SF 94110",
     confirmed_sqft: 2500,
     slope_tier: "flat",
@@ -923,9 +937,59 @@ console.log("\n=== T10.f: confirm_booking — calendar wire is fire-and-forget; 
   const slotId = slots[0]!.slotId;
   const booked = await runConfirmBooking(ctx("L12"), { slotId });
   ok("calendar no-op did NOT block booking", booked.status === "booked", JSON.stringify(booked));
-  ok("lead status Scheduled (booking persisted)",
-    (await getLead("L12"))?.status === "Scheduled" || (await getLead("L12"))?.status === "Work Order Created",
+  ok("lead status BOOKED (booking persisted)",
+    (await getLead("L12"))?.status === "BOOKED",
     (await getLead("L12"))?.status);
+}
+
+console.log("\n=== B20: returning-customer recognition (confirm-first) ===");
+{
+  resetStore([]);
+  resetCustomers();
+  // Known customer on file with a stored garden.
+  await materializeCustomer("dana@example.com", {
+    address: "742 Valencia St, SF 94110",
+    sqft: 2500,
+    slope: "flat",
+    status: "active",
+  });
+  await upsertLead({ lead_id: "RC1", channel: "form" });
+  const rec = await runRecognizeCustomer(ctx("RC1"), { email: "dana@example.com" });
+  ok("known email → returning", rec.status === "returning", JSON.stringify(rec));
+  ok("greeting is confirm-first, NO address revealed",
+    !!rec.greeting && !rec.greeting.includes("742 Valencia"), rec.greeting);
+  ok("email linked to lead", (await getLead("RC1"))?.customer_email === "dana@example.com");
+
+  // S2: affirm same garden → reuse stored sqft/slope SERVER-SIDE for pricing, but
+  // NEVER reveal/reuse the address (cross-model review B2 PII fix). The customer
+  // must re-enter their address themselves.
+  const applied = await runApplyReturningCustomer(ctx("RC1"), { sameGarden: true });
+  ok("same-garden → reused status, NO PII in the result", applied.status === "reused" && !("address" in applied) && !("confirmed_sqft" in applied), JSON.stringify(applied));
+  const reusedLead = await getLead("RC1");
+  ok("stored sqft reused server-side (skips re-measure)", reusedLead?.confirmed_sqft === 2500);
+  ok("stored slope reused server-side", reusedLead?.slope_tier === "flat");
+  ok("address NOT pre-filled on lead (customer must re-enter it)", reusedLead?.address === undefined, String(reusedLead?.address));
+}
+
+console.log("\n=== B20: S3 returning, different address → new-address flow ===");
+{
+  resetStore([]);
+  resetCustomers();
+  await materializeCustomer("mover@example.com", { address: "old place", sqft: 1000, slope: "flat", status: "active" });
+  await upsertLead({ lead_id: "RC2", channel: "form" });
+  await runRecognizeCustomer(ctx("RC2"), { email: "mover@example.com" });
+  const applied = await runApplyReturningCustomer(ctx("RC2"), { sameGarden: false });
+  ok("different address → new_address signal", applied.status === "new_address", JSON.stringify(applied));
+}
+
+console.log("\n=== B20: S4-V1 unrecognized email → new flow ===");
+{
+  resetStore([]);
+  resetCustomers();
+  await upsertLead({ lead_id: "RC3", channel: "form" });
+  const rec = await runRecognizeCustomer(ctx("RC3"), { email: "stranger@example.com" });
+  ok("unknown email → new", rec.status === "new", JSON.stringify(rec));
+  ok("unknown email still linked to lead", (await getLead("RC3"))?.customer_email === "stranger@example.com");
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);

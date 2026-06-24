@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/drain", "schedule": "* * * * *" },
+    { "path": "/api/cron/gcal-export", "schedule": "0 7 * * *" }
+  ]
+}

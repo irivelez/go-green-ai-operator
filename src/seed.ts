@@ -17,11 +17,11 @@ export const SEED_LEADS: Lead[] = [
     lead_score: "A", risk_level: "low",
     ai_recommendation: "Biweekly Signature maintenance. Manageable yard, no cleanup needed.",
     suggested_package: "signature", price_range: { low: 155, high: 190 },
-    status: "Work Order Created",
+    status: "BOOKED",
+    work_order_created_at: t("2026-06-14T18:00:00Z"),
     visit_at: t("2026-06-15T15:00:00Z"),
     work_order: { address: "742 Valencia St, San Francisco, CA 94110", zone: "SF-94110", frequency: "biweekly", package: "signature", price_range: { low: 155, high: 190 }, visit_at: "2026-06-15T15:00:00Z", notes: "Standard residential maintenance evaluation." },
     created_at: t("2026-06-12T17:42:10Z"), first_response_at: t("2026-06-12T17:42:48Z"),
-    _actions: ["seed-book-1001"],
   },
   // 2) Spanish A-lead, scheduled (small yard, weekly, Ingleside 94112)
   {
@@ -33,9 +33,8 @@ export const SEED_LEADS: Lead[] = [
     lead_score: "A", risk_level: "low",
     ai_recommendation: "Semanal Signature. Jardín pequeño y bien cuidado.",
     suggested_package: "signature", price_range: { low: 70, high: 85 },
-    status: "Scheduled", visit_at: t("2026-06-14T16:30:00Z"),
+    status: "BOOKED", visit_at: t("2026-06-14T16:30:00Z"),
     created_at: t("2026-06-12T19:05:00Z"), first_response_at: t("2026-06-12T19:05:41Z"),
-    _actions: [],
   },
   // 3) HOA → human review (escalation)
   {
@@ -43,10 +42,9 @@ export const SEED_LEADS: Lead[] = [
     address: "1200 Gough St, San Francisco, CA 94109", zone: "SF-94109",
     property_type: "hoa", desired_frequency: "weekly", photos: [],
     lead_score: "B", risk_level: "high",
-    status: "Needs Human Review", escalation_reason: "HOA",
+    status: "ESCALATED", escalation_reason: "HOA", escalated_at: t("2026-06-12T20:18:00Z"),
     internal_notes: "HOA common-area maintenance, 24-unit building. Needs formal proposal + insurance docs — human takes over.",
     created_at: t("2026-06-12T20:18:00Z"), first_response_at: t("2026-06-12T20:18:35Z"),
-    _actions: [],
   },
   // 4) Neglected yard → cleanup required before recurring (large, biweekly, Inner Richmond 94121)
   {
@@ -58,10 +56,9 @@ export const SEED_LEADS: Lead[] = [
     lead_score: "A", risk_level: "low",
     ai_recommendation: "Initial cleanup required BEFORE recurring. Then biweekly Signature. Cleanup quoted separately.",
     suggested_package: "signature", price_range: { low: 290, high: 370 },
-    status: "AI Qualified",
+    status: "ACTIVE",
     internal_notes: "Heavy overgrowth — one-time cleanup $1,300–$3,000 (separate line), then recurring.",
     created_at: t("2026-06-13T01:12:00Z"), first_response_at: t("2026-06-13T01:12:52Z"),
-    _actions: [],
   },
   // 5) Property manager, multifamily → human review
   {
@@ -69,10 +66,9 @@ export const SEED_LEADS: Lead[] = [
     address: "455 Hyde St, San Francisco, CA 94109", zone: "SF-94109",
     property_type: "property_manager", desired_frequency: "biweekly", photos: ["yard-1005.jpg"],
     lead_score: "B", risk_level: "high",
-    status: "Needs Human Review", escalation_reason: "property manager",
+    status: "ESCALATED", escalation_reason: "property manager", escalated_at: t("2026-06-13T02:40:00Z"),
     internal_notes: "3-building portfolio, wants one contract + monthly reporting. Pricing + contract = human.",
     created_at: t("2026-06-13T02:40:00Z"), first_response_at: t("2026-06-13T02:40:39Z"),
-    _actions: [],
   },
   // 6) Out of area → not a fit (Daly City 94015)
   {
@@ -81,20 +77,18 @@ export const SEED_LEADS: Lead[] = [
     property_type: "residential", desired_frequency: "monthly", photos: [],
     lead_score: "C", risk_level: "low",
     ai_recommendation: "Outside SF service area (94015). Polite decline.",
-    status: "Not a Fit",
+    status: "DEAD",
     internal_notes: "Daly City — outside current SF zip coverage.",
     created_at: t("2026-06-13T03:15:00Z"), first_response_at: t("2026-06-13T03:15:30Z"),
-    _actions: [],
   },
   // 7) Missing address → waiting for info
   {
     lead_id: "L-1007", name: "Olivia Martin", channel: "telegram", language: "en",
     property_type: "residential", desired_frequency: "biweekly", photos: ["yard-1007.jpg"],
     lead_score: "B", risk_level: "low",
-    status: "Waiting for Info",
+    status: "ACTIVE",
     internal_notes: "Has photos + frequency, no address yet. Asked for it.",
     created_at: t("2026-06-13T04:02:00Z"), first_response_at: t("2026-06-13T04:02:33Z"),
-    _actions: [],
   },
   // 8) Spanish, irrigation extra detected → ready to schedule (Castro 94114)
   {
@@ -105,10 +99,9 @@ export const SEED_LEADS: Lead[] = [
     lead_score: "A", risk_level: "low",
     ai_recommendation: "Quincenal Signature. Posible problema de riego — cotizar por separado (no incluido).",
     suggested_package: "signature", price_range: { low: 155, high: 190 },
-    status: "Ready to Schedule",
+    status: "ACTIVE", slots_offered_at: t("2026-06-13T05:25:00Z"),
     internal_notes: "Dry patches suggest irrigation issue — flagged as separate quote, not folded into maintenance.",
     created_at: t("2026-06-13T05:20:00Z"), first_response_at: t("2026-06-13T05:20:44Z"),
-    _actions: [],
   },
   // 9) Good lead went quiet → lost / no response
   {
@@ -116,10 +109,9 @@ export const SEED_LEADS: Lead[] = [
     address: "88 Day St, San Francisco, CA 94131", zone: "SF-94131",
     property_type: "residential", desired_frequency: "monthly", photos: [],
     lead_score: "B", risk_level: "low",
-    status: "Lost / No Response",
+    status: "ABANDONED",
     internal_notes: "Followed up 1h/24h/3d/7d — no reply. Kept in memory for reactivation.",
     created_at: t("2026-06-11T18:00:00Z"), first_response_at: t("2026-06-11T18:00:50Z"),
-    _actions: [],
   },
   // 10) Price shopper → not a fit
   {
@@ -128,18 +120,16 @@ export const SEED_LEADS: Lead[] = [
     property_type: "residential", desired_frequency: "monthly", photos: [],
     lead_score: "C", risk_level: "medium",
     ai_recommendation: "Only wants lowest price; not interested in recurring. Polite decline.",
-    status: "Not a Fit",
+    status: "DEAD",
     internal_notes: "Compared everything to a $40 gardener, refused photos. Not a premium-maintenance fit.",
     created_at: t("2026-06-12T22:30:00Z"), first_response_at: t("2026-06-12T22:30:29Z"),
-    _actions: [],
   },
   // 11) Fresh inbound → new lead (just a greeting)
   {
     lead_id: "L-1011", name: "Aisha Khan", channel: "telegram", language: "en",
     property_type: "unknown", photos: [],
-    status: "New Lead",
+    status: "ACTIVE",
     internal_notes: "Just said hi — sent the warm intake asking for address, photos, frequency.",
     created_at: t("2026-06-13T06:10:00Z"), first_response_at: t("2026-06-13T06:10:36Z"),
-    _actions: [],
   },
 ];

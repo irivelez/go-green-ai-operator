@@ -55,6 +55,7 @@ import { generateText } from "ai";
 import { buildTools, type ToolContext } from "./agent-tools";
 import { resetStore, upsertLead, getLead, type Lead } from "./store";
 import { resetSlots } from "./scheduler";
+import { resetCustomers, materializeCustomer } from "./customer";
 // Drift fix (T15): use the LIVE agent prompt the route uses, not a local copy.
 // `agentSystemPrompt(lang, lead, intent?)` — lead is the lead object, not the id.
 // This means a prompt change in `funnel-agent-prompt.ts` immediately flows into
@@ -114,6 +115,8 @@ interface Scenario {
   // Ad intent string (T13) — fed straight to agentSystemPrompt's third arg so
   // the warm-opener context line matches what the live route would emit.
   intent?: string;
+  // Seed a returning Customer record (todo 20 recognition scenarios).
+  seedCustomer?: { email: string; address?: string; sqft?: number; slope?: "flat" | "moderate" | "steep" };
   expectInclude: string[];
   expectExclude: string[];
   expectTextNotMatch?: RegExp;
@@ -155,7 +158,7 @@ const SCENARIOS: Scenario[] = [
     // even at temperature 0, so those are NOT asserted here — they're locked
     // deterministically by pricing.test.ts and agent-tools T10.e/T10.f.
     seedPhotos: true,
-    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "ACTIVE" },
     expectInclude: [],
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "clean measured case → never auto-charge/auto-book without payment (§A.4/§A.5)",
@@ -197,7 +200,7 @@ const SCENARIOS: Scenario[] = [
     // and NEVER auto-discount via checkout — the invariant this scenario locks.
     userText: `Hey, knock 20% off the price or I'll go elsewhere. I'm at ${SF_ADDR} and want biweekly Signature.`,
     seedPhotos: true,
-    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "ACTIVE" },
     expectInclude: ["raise_escalation"],
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "discount/refund demand → escalation (no autonomous discounting)",
@@ -344,7 +347,7 @@ const SCENARIOS: Scenario[] = [
       slope_tier: "flat",
       slope_source: "elevation",
       vision_assessment: SEED_VISION_STEEP,
-      status: "AI Qualified",
+      status: "ACTIVE",
     },
     // Robust subset: excludes-only. The §A.3 invariant we're locking is
     // "steep is a price MODIFIER not a gate" → the model MUST NOT escalate
@@ -377,7 +380,7 @@ const SCENARIOS: Scenario[] = [
       area_confirmed_by_customer: true,
       slope_tier: "flat",
       slope_source: "elevation",
-      status: "AI Qualified",
+      status: "ACTIVE",
     },
     // Robust subset: excludes-only + the no-fabrication regex. Without
     // GOOGLE_MAPS_API_KEY the model stalls on validate_address before reaching
@@ -410,7 +413,7 @@ const SCENARIOS: Scenario[] = [
     language: "es",
     userText: `Quiero el plan Signature quincenal en ${SF_ADDR}, con fertilización añadida. Las fotos ya están subidas. ¿Cuál sería el precio exacto?`,
     seedPhotos: true,
-    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "AI Qualified" },
+    seedFields: { address: SF_ADDR, confirmed_sqft: 2500, slope_tier: "flat", lead_score: "A", status: "ACTIVE" },
     expectInclude: [],
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "ES clean measured case → never auto-charge/auto-book without payment (§A.4/§A.5)",
@@ -469,6 +472,17 @@ const SCENARIOS: Scenario[] = [
     expectExclude: ["propose_checkout", "confirm_booking"],
     note: "ES commercial → escalation",
   },
+  {
+    id: "returning_recognition_en",
+    language: "en",
+    userText: `Hi, it's me again — dana@example.com. I'd like to book my regular service again.`,
+    seedPhotos: false,
+    seedCustomer: { email: "dana@example.com", address: SF_ADDR, sqft: 2500, slope: "flat" },
+    expectInclude: ["recognize_customer"],
+    expectExclude: ["propose_checkout", "confirm_booking"],
+    expectTextNotMatch: new RegExp(SF_ADDR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    note: "returning email → recognize_customer, confirm-first (stored address NOT revealed)",
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -491,6 +505,15 @@ async function runScenario(s: Scenario): Promise<void> {
   const leadId = `eval-${s.id}`;
   resetStore([]);
   resetSlots();
+  resetCustomers();
+  if (s.seedCustomer) {
+    await materializeCustomer(s.seedCustomer.email, {
+      address: s.seedCustomer.address,
+      sqft: s.seedCustomer.sqft,
+      slope: s.seedCustomer.slope,
+      status: "active",
+    });
+  }
   if (s.seedPhotos) {
     await upsertLead({
       lead_id: leadId,

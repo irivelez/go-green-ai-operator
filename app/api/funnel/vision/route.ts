@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { VisionAssessment } from "@/src/contract";
 import { analyzeYardPhotos } from "@/src/vision";
+import { photoCaps, photoByteSize } from "@/src/photo-cap";
+import { checkRateLimit } from "@/src/spend";
+import { clientIp } from "@/src/net";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,8 +62,24 @@ export async function POST(req: NextRequest) {
   if (mock === "low-confidence") return NextResponse.json(LOW_CONFIDENCE);
   if (mock === "neglected") return NextResponse.json(NEGLECTED);
 
+  // Cost-bomb guard (cross-model review S8): the standalone vision route hits real
+  // Anthropic vision — it MUST carry the same IP/global rate limit the agent route
+  // has, or a hostile caller can hammer it directly. No-op without Upstash.
+  const rate = await checkRateLimit(clientIp(req.headers, "vision-anon"));
+  if (!rate.allowed) {
+    return NextResponse.json({ error: "rate_limited", scope: rate.scope }, { status: 429 });
+  }
+
+  // Belt-and-suspenders cap at analyze-time (todo 6): the primary count/byte cap
+  // is at ingest, but the standalone vision route can be hit directly — trim to
+  // the configured count + per-photo byte cap before the Anthropic call.
+  const caps = photoCaps();
+  const bounded = parsed.data.photos
+    .filter((p) => photoByteSize(p) <= caps.maxBytesPerPhoto)
+    .slice(0, caps.maxPhotos);
+
   // Real assessment. analyzeYardPhotos handles empty photos + missing key by
   // returning an honest low-confidence assessment (never throws).
-  const assessment = await analyzeYardPhotos(parsed.data.photos);
+  const assessment = await analyzeYardPhotos(bounded);
   return NextResponse.json(assessment);
 }

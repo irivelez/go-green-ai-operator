@@ -42,14 +42,22 @@ console.log("\n=== Scenario 1: happy A-lead (medium yard, biweekly, SF 94110) ==
   ok("range covered", range.covered, `$${range.low}-$${range.high}`);
   ok("range is exact (compat shim returns point)", range.high === range.low);
 
+  // BOOKED now means a PAID booking (cross-model review B1): the lead must be PAID
+  // before tool_book_evaluation will write BOOKED. Seed PAID to exercise the happy path.
   await upsertLead({ lead_id: "L1", channel: "telegram", lead_score: "A", zone: scored.geo.zone,
-    suggested_package: "signature", price_range: { low: range.low, high: range.high } });
+    suggested_package: "signature", price_range: { low: range.low, high: range.high },
+    status: "PAID" });
 
-  const booked = await tool_book_evaluation({ ...lead, address: lead.address } as never, "2026-06-15T15:00:00Z");
-  ok("booked (has address)", booked.ok, booked.reason ?? "");
+  // Unpaid booking is refused (the money gate).
+  const unpaidLead = await upsertLead({ lead_id: "L1u", channel: "telegram", address: lead.address, status: "ACTIVE" });
+  const refused = await tool_book_evaluation(unpaidLead, "2026-06-15T15:00:00Z");
+  ok("unpaid lead → booking refused (money gate)", !refused.ok && /payment_required/.test(refused.reason ?? ""), refused.reason ?? "");
+
+  const booked = await tool_book_evaluation({ ...lead, lead_id: "L1", address: lead.address } as never, "2026-06-15T15:00:00Z");
+  ok("paid lead → booked (has address)", booked.ok, booked.reason ?? "");
   const wo = await tool_create_work_order("L1");
   ok("work order created", "work_order" in wo && !!(wo as { work_order: unknown }).work_order);
-  ok("idempotent re-book blocked", !(await tool_book_evaluation({ ...lead, address: lead.address } as never, "2026-06-15T15:00:00Z")).ok);
+  ok("idempotent re-book blocked", !(await tool_book_evaluation({ ...lead, lead_id: "L1", address: lead.address } as never, "2026-06-15T15:00:00Z")).ok);
 }
 
 console.log("\n=== Scenario 2: HOA → escalation (no autonomous booking) ===");
@@ -59,7 +67,7 @@ console.log("\n=== Scenario 2: HOA → escalation (no autonomous booking) ===");
   const esc = checkEscalation({ inbound_text: "Hi, our HOA needs weekly service for the common areas." });
   ok("HOA flagged", esc.escalate, esc.reasons.join(", "));
   const lead = await tool_raise_escalation("L2", "telegram", esc.reasons.join(", "), "HOA common-area request — needs human.");
-  ok("routed to Needs Human Review", lead.status === "Needs Human Review");
+  ok("routed to ESCALATED", lead.status === "ESCALATED");
 }
 
 console.log("\n=== Scenario 3: hard rule — no address → no scheduling ===");

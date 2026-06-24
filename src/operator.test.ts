@@ -1,7 +1,7 @@
 // Operator conversation proof — no keys needed (template reply path).
 // Drives the serverless brain through every branch the dashboard exercises.
 
-import { resetStore } from "./store";
+import { resetStore, upsertLead } from "./store";
 import { runOperator } from "./operator";
 import { getStripeClient } from "./stripe";
 
@@ -69,17 +69,26 @@ async function main() {
   ok("priced an exact per-visit point (T5 compat shim)", !!r1.decision.price_range && r1.decision.price_range.high === r1.decision.price_range.low && r1.decision.price_range.low > 0, JSON.stringify(r1.decision.price_range));
   ok("reply mentions a range", /\$\d+/.test(r1.reply));
 
+  // Money gate (cross-model review B1): the legacy operator has NO payment step,
+  // so an unpaid lead can no longer be auto-booked — tool_book_evaluation refuses
+  // and the operator falls through to re-offering slots. BOOKED now means PAID.
   const r2 = await runOperator({ lead_id: "C1", channel: "telegram", text: "the first one works" });
-  ok("booked → work order", r2.decision.stage === "Work Order Created", r2.decision.intent);
-  ok("booked slot recorded", !!r2.decision.booked_slot);
+  ok("unpaid legacy lead NOT auto-booked (money gate)", r2.decision.stage !== "BOOKED", r2.decision.stage);
+  ok("falls through to re-offering slots", r2.decision.intent === "offer_slots", r2.decision.intent);
+
+  // After payment (simulated), the same confirmation books successfully.
+  await upsertLead({ lead_id: "C1", channel: "telegram", status: "PAID" });
+  const r2b = await runOperator({ lead_id: "C1", channel: "telegram", text: "the first one works" });
+  ok("paid lead → booked", r2b.decision.stage === "BOOKED", r2b.decision.intent);
+  ok("booked slot recorded", !!r2b.decision.booked_slot);
 
   console.log("\n=== Conversation 2: HOA → escalation ===");
   const r3 = await runOperator({ lead_id: "C2", channel: "email", name: "Tom", text: "Our HOA needs weekly service for the common areas at 1200 Gough St 94109" });
-  ok("escalated", r3.decision.escalated && r3.decision.stage === "Needs Human Review", r3.decision.escalation_reasons.join(","));
+  ok("escalated", r3.decision.escalated && r3.decision.stage === "ESCALATED", r3.decision.escalation_reasons.join(","));
 
   console.log("\n=== Conversation 3: out of area → not a fit ===");
   const r4 = await runOperator({ lead_id: "C3", channel: "form", text: "monthly service for 120 Hillside Blvd, Daly City 94015" });
-  ok("declined out-of-area", r4.decision.stage === "Not a Fit", r4.decision.intent);
+  ok("declined out-of-area", r4.decision.stage === "DEAD", r4.decision.intent);
 
   console.log("\n=== Conversation 4: incomplete → collect info ===");
   const r5 = await runOperator({ lead_id: "C4", channel: "telegram", name: "Olivia", text: "hi do you do garden maintenance?" });
