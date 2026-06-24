@@ -98,7 +98,7 @@ contract:
 
 | Doc/comment | Where | What's stale |
 |---|---|---|
-| "Claude Agent SDK / `query()` loop" / Stack list | `README.md:9-12,45,54` | Dep dropped (`AGENTS.md:28`, absent from `package.json`); `agent.ts` uses the Messages API. **→ deferred to Phase 14** (README is the human front-door doc; the onboarding-doc phase is the right place to reconcile it). |
+| "Claude Agent SDK / `query()` loop" / Stack list | `README.md` + `AGENTS.md:9,13,71` | **FIXED (Phase 14)** — dep dropped (`AGENTS.md:28`, absent from `package.json`); `agent.ts` uses the Messages API. README + AGENTS.md now describe the long-running Telegram runtime as a Messages-API loop; README Stack lists "Anthropic Messages API · Vercel AI SDK". New `CLAUDE.md` is the authoritative agent-onboarding doc. (Full V1→V2 *product* re-narration of README remains the tracked HANDOFF §7 TODO — out of scope for behavior-preserving cleanup.) |
 | "TEST MODE ONLY" header | `stripe.ts:1` | **FIXED (Phase 12)** — now "test-mode by default; live gated by STRIPE_LIVE_OK=1". Also fixed: `handleStripeWebhook`→`handleStripeEvent` (stripe.ts:10) and the "live keys refused at boot" invariant (stripe.ts:15); webhook route header (app/api/stripe/webhook/route.ts:1). |
 | "TEST MODE ONLY" (smoke script) | `stripe.smoke.ts:1` | **KEPT** — a smoke test legitimately should run test-mode; reasonable caution, not stale. |
 | Rename-stale comments after phases 7/10 | repo-wide | **Scanned (Phase 12): none** — no commented-out code anywhere; `confirmPayment`/`frEs` fully gone. |

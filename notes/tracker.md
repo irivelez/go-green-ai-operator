@@ -52,7 +52,7 @@ gate names the full path set explicitly (recon Step 1).
 | 11 | Classes & file names | done | | **Empty surface** (valid). Classes (MemoryBackend/JsonBackend/KvBackend) + ~50 types + filenames all clear; data types are frozen boundaries; prompt-trio/tools split is doc-referenced + build-significant → leave. No code change. |
 | 12 | Clean comments/docstrings | done | | 4 stale-fact fixes (stripe.ts header ×3 incl. `handleStripeWebhook`→`handleStripeEvent`; webhook route header). No commented-out code in repo. README staleness → Phase 14. Gate green. |
 | 13 | Research legibility techniques | done | | notes/phase13-research.md — cited (official Claude docs + agents.md). Key: lean CLAUDE.md, gate is highest-leverage, `@`-imports for progressive disclosure. Repo has AGENTS.md but no CLAUDE.md → Phase 14 authors one. |
-| 14 | Self-onboarding capstone | pending | | doc + fresh-context eval |
+| 14 | Self-onboarding capstone | done | | Authored lean **CLAUDE.md** (gate-first, @-imports for progressive disclosure). Fixed stale Agent-SDK claims in README + AGENTS.md (lines 9/13/71). Eval: 2 cold readers `orientedWell:YES` (~8 reads each, all correct) + gate-critic 14/15 confirmed (15th a false-positive on the valid `@`-import syntax). Gate green. |
 
 **Per-phase learnings:**
 - Recon: a prior deep-research pass on this repo seeded the architecture reference + registries; the cross-cutting

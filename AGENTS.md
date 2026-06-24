@@ -6,11 +6,11 @@ Autonomous ops layer for Go Green Landscape (premium garden maintenance, SF). De
 Autonomous maintenance funnel: intake → qualify → range-price → book, with human-in-the-loop escalation. Standard residential = full autonomy; flagged cases → human queue.
 
 ## Two surfaces (KEY architecture fact)
-The Claude Agent SDK spawns a `claude` CLI subprocess + needs a writable FS → it **cannot run on Vercel serverless** (verified). So the build splits, sharing ONE domain core (`src/pricing|qualify|escalation|store|prompt|tools|operator.ts`):
+The Claude Agent SDK spawns a `claude` CLI subprocess + needs a writable FS → it **cannot run on Vercel serverless** (verified), so it was **dropped** for the Anthropic Messages API + Vercel AI SDK (see below). The build still splits, sharing ONE domain core (`src/pricing|qualify|escalation|store|prompt|tools|operator.ts`):
 
 1. **Live dashboard + serverless Operator** (the live URL) — Next.js on Vercel. Runs the **deterministic** engine (qualify/price/escalate/book) in API routes → fully functional with **zero keys**. Claude phrases replies via the Anthropic **Messages API** when `ANTHROPIC_API_KEY` is set. Telegram channel here too (`app/api/telegram/webhook`).
    - UI: `app/page.tsx` + `app/components/*`. Routes: `app/api/{operator,leads,leads/[id]/approve,leads/[id]/reject,telegram/webhook}`.
-2. **Agent SDK runtime** (`src/agent.ts` + `src/index.ts`) — the long-running Telegram brain. `query()` loop, in-process MCP tools (`createSdkMcpServer`+`tool()`), `canUseTool` = escalation gate + built-ins-off guard. Run via `npm run agent` on a host with a key.
+2. **Long-running Telegram runtime** (`src/agent.ts` + `src/index.ts`) — the Telegram brain: a `@anthropic-ai/sdk` Messages-API reasoning loop that runs the deterministic escalation gate first, then has Claude phrase the reply. Run via `npm run agent` on a host with a key.
 
 - **Pricing**: deterministic TS, range-only, `src/pricing.ts`. NEVER an LLM guess.
 - **Store**: pluggable `src/store.ts` — memory (default, tests, seeded `src/seed.ts`) | json (local dev, file-backed shared source of truth) | kv (Vercel prod, Upstash Redis — per-lead `lead:{id}` JSON + sorted-set `leads:index` recency, one atomic `multi().set().zadd()` per upsert). Backend interface is async per-lead ops (`getLead`/`putLead`/`allLeads`), not whole-DB load/save — closes the cross-route coherence gap that previously priced steep lots flat across separate serverless invocations.
@@ -68,7 +68,7 @@ Master Prompt: professional, warm, premium, honest. Mirror EN/ES. Never "cheap",
 - `npm test` — proves the spine (core + operator), **no keys needed**.
 - Dashboard + Operator: `npm run dev` → http://localhost:3000 (works with zero keys).
 - Deploy live: `vercel --prod` (project `irivelezs-projects/gogreen-ai-operator`).
-- Agent SDK Telegram runtime (optional, long-running host): set `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN`, `npm run agent`.
+- Long-running Telegram runtime (optional host): set `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN`, `npm run agent`.
 - Add `ANTHROPIC_API_KEY` (Vercel env) → Claude writes the replies. Add `TELEGRAM_BOT_TOKEN` → `GET /api/telegram/webhook?setup=1` registers the live channel.
 
 ## Open (spec §19): crew slot capacity · WA number · form webhook · dashboard staffing/lang · full SF zip list · rate-card sign-off.
