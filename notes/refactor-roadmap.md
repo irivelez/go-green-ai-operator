@@ -54,7 +54,7 @@ smoke test.**
 | G1 | store prod-safety guard (`prodStoreBackendError`, VERCEL-keyed) + `.env.example` KV block + `store.test.ts` | behavior-changing | **done** (17/17 suites) |
 | G2 | post-payment return+resume: `APP_BASE_URL` → success/cancel URLs + leadId persist + `?checkout=success` resume | behavior-changing | **done** (`checkout-return.ts`+`getAppBaseUrl`; 18/18 suites; build green) |
 | G3 | rate-limit + per-lead daily cap on `/api/funnel/agent` (`@upstash/ratelimit`) → 429 | behavior-changing | **done** (`src/rate-limit.ts`; per-IP 30/10m + per-lead 100/day; no-op without Upstash; 19/19) |
-| G4 | interim `middleware.ts` basic-auth over `/` + `/api/leads/*` + `/api/operator` (funnel/webhook open) | behavior-changing | todo |
+| G4 | interim `middleware.ts` basic-auth over `/` + `/api/leads/*` + `/api/operator` (funnel/webhook open) | behavior-changing | **done** (`src/dashboard-auth.ts`; unset→dev-open/Vercel-fail-closed; 20/20; middleware compiled) |
 | G5 | prod env+headers: model default note, security headers, optional `vercel.json` | preserving | todo |
 | G6 | `docs/runbooks/deploy-to-vercel.md` + cross-link from CLAUDE.md | docs | todo |
 | G7 | (optional) `scripts/load-smoke.mjs` concurrent-session smoke | tooling | todo |
